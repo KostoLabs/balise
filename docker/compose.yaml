@@ -1,5 +1,10 @@
 name: balise
 
+networks:
+  edge:
+    name: dev-ovh_koordo
+    external: true
+
 services:
   back:
     build:
@@ -9,13 +14,14 @@ services:
       - MISTRAL_API_KEY=${MISTRAL_API_KEY:?set MISTRAL_API_KEY in .env}
       - CHAT_MODEL=${CHAT_MODEL:-mistral-small-latest}
     restart: unless-stopped
+    networks: [edge]
 
   front:
     build:
       context: ..
       dockerfile: docker/Dockerfile.front
-    ports:
-      - "3000:80"
+    # Pas de ports publiés : exposé via le Caddy de la VM (balise.kostolabs.ai)
     depends_on:
       - back
     restart: unless-stopped
+    networks: [edge]
