@@ -111,7 +111,7 @@ async def _answer(req: ChatRequest, falc: bool) -> dict:
     docs += [d for d in live if d.url not in seen]
     docs = docs[:10]
     if not docs:
-        return agent.unknown_answer(req.question, docs)
+        return agent.unknown_answer(req.question, docs, profile=req.profile if req.profile in ("famille", "pro") else "famille")
 
     try:
         ans = await agent.synthesize(
@@ -130,7 +130,7 @@ async def _answer(req: ChatRequest, falc: bool) -> dict:
 
     if not ans["paras"]:
         # honnêteté : pas de contenu fabriqué sans source
-        u = agent.unknown_answer(req.question, docs)
+        u = agent.unknown_answer(req.question, docs, profile=req.profile if req.profile in ("famille", "pro") else "famille")
         u["sources"] = agent.cited_payload(u, docs) if u.get("paras") else agent.sources_payload(docs)
         return u
 
@@ -138,9 +138,21 @@ async def _answer(req: ChatRequest, falc: bool) -> dict:
     # des paragraphes sourcés ([n] valides) prouvent que les extraits répondaient.
     cited = any(agent.CITE_RE.search(p) for p in ans["paras"])
     if ans["unknown"] and not cited:
-        u = agent.unknown_answer(req.question, docs)
-        u["sources"] = agent.cited_payload(u, docs) if u.get("paras") else agent.sources_payload(docs)
-        return u
+        # garde : si un doc FINESS (annuaire) était fourni, il contenait une
+        # réponse factuelle — le unknown du modèle est un refus de lecture.
+        has_finess = any(getattr(d, "centre_id", "") == "finess" for d in docs)
+        if not has_finess:
+            u = agent.unknown_answer(req.question, docs, profile=req.profile if req.profile in ("famille", "pro") else "famille")
+            u["sources"] = agent.sources_payload(docs)
+            return u
+        # on force une réponse depuis les passages FINESS, sans invention
+        ans = {
+            "unknown": False,
+            "paras": ["Voici ce que dit l'annuaire public FINESS : " + p for d in docs if getattr(d, "centre_id", "") == "finess" for p in d.passages[:2]],
+            "steps": [],
+            "contacts": [],
+            "followup": "",
+        }
     if cited:
         ans["unknown"] = False
 
