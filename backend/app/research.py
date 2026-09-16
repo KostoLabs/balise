@@ -155,16 +155,36 @@ STOP_FR = {
 }
 
 
+# Mots de contexte personnel/professionnel : ils décrivent QUI parle, pas le SUJET.
+# La requête moteur doit porter sur le sujet (charcot, ime, savs…), pas sur
+# « je suis assistante sociale » — sinon les 6 premiers mots-clés sont tous
+# du contexte et le sujet n'est jamais recherché.
+CONTEXT_WORDS = {
+    "suis", "assistante", "assistant", "social", "sociale", "medecin", "infirmier",
+    "infirmiere", "educateur", "coordinatrice", "coordinateur", "travailleur",
+    "famille", "proche", "parent", "maman", "papa", "moi", "chez", "habite",
+    "accompagne", "suivi", "suit", "enfant", "adolescent", "jeune", "adulte",
+    "personne", "dont", "vient", "apprendre", "decouvre", "annonce", "diagnostic",
+    "nouveau", "dernier", "cette", "ce", "cet", "ma", "mon", "mes",
+    "son", "sa", "ses", "leur", "leurs", "nous", "vous", "on", "est", "a",
+    "malade", "patient", "usager", "dossier", "situation", "cas",
+}
+
+
 def keywords(question: str, extra: list[str]) -> list[str]:
     words = [w.strip(".,;:!?()\"'«»").lower() for w in WORD.findall(question)]
     words = [w for w in words if len(w) >= 3 and w not in STOP_FR]
     for e in extra:
         if e:
             words.append(e.lower())
+    # le SUJET d'abord : les mots de contexte (qui parle / à qui) passent après
+    subject = [w for w in words if w not in CONTEXT_WORDS]
+    context = [w for w in words if w in CONTEXT_WORDS]
+    ordered = subject + context
     # unique en conservant l'ordre
     seen: set[str] = set()
     out: list[str] = []
-    for w in words:
+    for w in ordered:
         if w not in seen:
             seen.add(w)
             out.append(w)
