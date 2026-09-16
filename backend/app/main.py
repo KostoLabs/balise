@@ -16,8 +16,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import agent, research
+from . import agent, corpus, research
 from .ressources import get_sources
+
+log = logging.getLogger("balise")
 
 load_dotenv()
 
@@ -88,7 +90,13 @@ def _situations_ok(req: ChatRequest) -> list[str]:
 
 
 async def _answer(req: ChatRequest, falc: bool) -> dict:
-    docs = await research.research_all(req.question, _context_kw(req) + _situations_ok(req))
+    kws = research.keywords(req.question, _context_kw(req) + _situations_ok(req))
+    # 1) corpus local (passages vérifiés des centres ressources) — prioritaire
+    docs = corpus.corpus_search(kws)
+    # 2) recherche live en complément (fusion, dédoublonnée par URL)
+    live = await research.research_all(req.question, _context_kw(req) + _situations_ok(req))
+    seen = {d.url for d in docs}
+    docs += [d for d in live if d.url not in seen]
     docs = docs[:10]
     if not docs:
         return agent.unknown_answer(req.question, docs)
@@ -108,11 +116,21 @@ async def _answer(req: ChatRequest, falc: bool) -> dict:
         log.exception("synthèse Mistral échouée")
         raise HTTPException(status_code=502, detail="synthesis_failed")
 
-    if ans["unknown"] or not ans["paras"]:
+    if not ans["paras"]:
         # honnêteté : pas de contenu fabriqué sans source
         u = agent.unknown_answer(req.question, docs)
         u["sources"] = agent.sources_payload(docs)
         return u
+
+    # unknown du modèle fiable seulement si les paras ne citent RIEN :
+    # des paragraphes sourcés ([n] valides) prouvent que les extraits répondaient.
+    cited = any(agent.CITE_RE.search(p) for p in ans["paras"])
+    if ans["unknown"] and not cited:
+        u = agent.unknown_answer(req.question, docs)
+        u["sources"] = agent.sources_payload(docs)
+        return u
+    if cited:
+        ans["unknown"] = False
 
     ans["sources"] = agent.sources_payload(docs)
     ans["glossary"] = agent.glossary_for(ans["paras"])

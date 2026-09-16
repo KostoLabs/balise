@@ -84,10 +84,25 @@ def _passages_block(docs) -> str:
     return "\n".join(lines)
 
 
+def _dept_ctx(dept) -> str:
+    if dept is None:
+        return ""
+    if hasattr(dept, "model_dump"):
+        d = dept.model_dump()
+    elif isinstance(dept, dict):
+        d = dept
+    else:
+        d = {"code": getattr(dept, "code", ""), "nom": getattr(dept, "nom", "")}
+    nom, code = d.get("nom", ""), d.get("code", "")
+    return f"département : {nom} ({code})" if nom else ""
+
+
 def _system_prompt(profile: str, falc: bool, dept, situations, age, docs) -> str:
     ctx = []
     if dept:
-        ctx.append(f"département : {dept.get('nom')} ({dept.get('code')})")
+        line = _dept_ctx(dept)
+        if line:
+            ctx.append(line)
     if situations:
         ctx.append("situations : " + ", ".join(situations))
     if age:
