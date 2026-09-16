@@ -18,7 +18,10 @@ jobs:
       - uses: astral-sh/setup-uv@v5
 
       - name: Install
-        run: uv pip install --system -r requirements.txt pytest ruff
+        run: |
+          uv venv .venv
+          uv pip install -r requirements.txt pytest ruff
+          echo "VIRTUAL_ENV=$PWD/.venv" >> "$GITHUB_ENV"
 
       - name: Lint
         run: ruff check .
