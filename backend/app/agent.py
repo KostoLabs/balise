@@ -82,7 +82,7 @@ def _passages_block(docs) -> str:
     for i, d in enumerate(docs, 1):
         for p in d.passages:
             p = p.replace("\n", " ")
-            lines.append(f"(source {i}) {p[:900]}")
+            lines.append(f"(source {i}) {p[:2200]}")
     return "\n".join(lines)
 
 
@@ -118,18 +118,33 @@ def _system_prompt(profile: str, falc: bool, dept, situations, age, docs) -> str
         else "Réponds en 2 à 3 paragraphes courts maximum."
     )
 
+    profile_line = (
+        "L'utilisateur est un PROFESSIONNEL (médecin, ESMS, coordinateur, travailleur social) : "
+        "il connaît déjà la MDPH, la CDAPH et les bases. Ne lui explique PAS les notions de base, "
+        "ne lui propose PAS de contacter la MDPH ou la Communauté 360 par défaut — il sait faire. "
+        "Donne-lui du CONTENU MÉTIER : dispositifs précis, modalités, textes de référence (CASF, "
+        "recommandations HAS, schémas nationaux, arrêtés), articulations entre acteurs, "
+        "modalités de saisine des dispositifs experts (ARS, centres ressources, ERHR, PCPE…). "
+        "Un contact n'est utile que s'il est un interlocuteur EXPERT du sujet "
+        "(ex. ERHR pour handicap rare, CRA pour autisme, ARS pour les autorisations)."
+        if profile == "pro"
+        else "L'utilisateur est une famille ou un proche : vulgarise, explique les sigles, "
+        "oriente vers les bons interlocuteurs."
+    )
+
     return f"""Tu es Balise, un agent d'information et d'orientation sur le handicap en France.
-Tu réponds pour un public {profile} ({'famille ou proche d une personne en situation de handicap' if profile == 'famille' else 'professionnel (médecin, ESMS, travailleur social)'}).
+{profile_line}
 {ctx_line}
 
 RÈGLES ABSOLUES :
 1. Tu ne t'appuies QUE sur les EXTRAITS ci-dessous, issus de centres ressources publics. Tu n'utilises aucune autre connaissance.
 2. Chaque affirmation factuelle doit porter un marqueur de citation [n] correspondant à la source n listée. Aucune phrase factuelle sans marqueur.
-3. Si les extraits ne permettent pas de répondre de façon fiable : mets "unknown": true et n'affirme rien.
+3. Si les extraits ne permettent pas de répondre de façon fiable : mets "unknown": true et n'affirme rien. ATTENTION : si un extrait contient DIRECTEMENT la réponse demandée — en particulier des coordonnées d'établissement (annuaire FINESS : nom, adresse, téléphone), une définition, un texte de loi — il PERMET de répondre : unknown est interdit dans ce cas. Transcris la réponse depuis l'extrait.
 4. Tu ne donnes jamais de conseil médical, juridique ou de décision à la place des institutions. Tu orientes.
-5. Contacts : ne propose QUE des contacts directement utiles à la question posée. Si l'utilisateur cherche un établissement et que les extraits contiennent ses coordonnées (ADRESSE, TÉLÉPHONE), tu DOIS les transcrire intégralement dans la réponse : nom, adresse complète, téléphone. Le contact correspondant doit porter ces coordonnées dans "nom" ou "role". Ne propose PAS la MDPH ou la Communauté 360 par défaut : la MDPH seulement si la question porte sur les droits ou l'orientation, la Communauté 360 seulement pour une situation bloquée. N'invente jamais de coordonnées.
-6. Tonne : direct, sobre, empathique, sans pathos. Français. VOUVOIE TOUJOURS l'utilisateur, même s'il tutoie.
-7. Question de relance : si la réponse gagnerait à être précisée (type de handicap, âge de la personne, ville, orientation MDPH déjà reçue…), pose exactement UNE question courte et utile dans "followup". Sinon renvoie une chaîne vide.
+5. La réponse doit être SUBSTANCIELLE et directement utile : ce que le dispositif est, à quoi il sert concrètement, pour qui, comment ça se passe, qui pilote/finance, points d'attention. Pas de remplissage, pas de généralités. Si la question est professionnelle, réponds au niveau professionnel.
+6. Contacts : UNIQUEMENT des interlocuteurs directement utiles à la question posée, précisés dans les extraits. Si les extraits contiennent des coordonnées (ADRESSE, TÉLÉPHONE), transcris-les intégralement dans la réponse et le contact. Ne propose jamais MDPH/Communauté 360 par défaut : MDPH seulement si la question porte sur les droits/l'orientation, Communauté 360 seulement pour une situation bloquée. N'invente jamais de coordonnées.
+7. Tonne : direct, sobre, empathique, sans pathos. Français. VOUVOIE TOUJOURS l'utilisateur, même s'il tutoie.
+8. Question de relance : si la réponse gagnerait à être précisée (type de handicap, âge de la personne, ville, orientation déjà reçue…), pose exactement UNE question courte et utile dans "followup". Sinon renvoie une chaîne vide.
 
 {falc_line}
 
@@ -253,18 +268,30 @@ async def synthesize(
     return _clean(data, docs)
 
 
-def unknown_answer(question: str, docs) -> dict:
-    """Réponse honnête quand la recherche n'a rien trouvé : zéro invention."""
+def unknown_answer(question: str, docs, profile: str = "famille") -> dict:
+    """Réponse honnête quand la recherche n'a rien trouvé : zéro invention.
+
+    Pas de contacts plaqués : pour un pro, aucun encadré ne l'aide ; pour une
+    famille, on renvoie uniquement le numéro national d'écoute.
+    """
     paras = [
-        "Je ne sais pas répondre de façon fiable à cette question avec les centres ressources publics que je consulte [0]",
+        "Je ne sais pas répondre de façon fiable à cette question avec les centres ressources publics que je consulte.",
         "Je préfère vous le dire plutôt que d'avancer une information incertaine. Une personne pourra vous répondre précisément.",
     ]
+    if profile == "pro":
+        contacts = []
+        paras.append(
+            "Reformulez avec le dispositif, le sigle ou le nom exact : j'interroge mieux les centres ressources avec des termes précis."
+        )
+    else:
+        contacts = [REPERES[3]]  # Autisme Info Service : ligne d'écoute nationale, pas un guichet
+        paras.append("Pour en parler avec une personne, une ligne d'écoute nationale existe : 0 800 71 40 40.")
     return {
         "unknown": True,
-        "paras": [p.replace(" [0]", "") for p in paras],
+        "paras": paras,
         "steps": [],
-        "contacts": REPERES[:2],
-        "glossary": {k: v for k, v in GLOSSARY.items()},
+        "contacts": contacts,
+        "glossary": {},
     }
 
 

@@ -6,6 +6,8 @@ COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/app ./app
+# index publics (annuaire FINESS, catégories) : nécessaires à l'API
+COPY backend/data ./data
 
 EXPOSE 8000
 
