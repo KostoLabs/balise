@@ -18,7 +18,9 @@ from typing import Any
 
 from mistralai.client import Mistral
 
-DEFAULT_MODEL = "mistral-small-latest"
+# mistral-medium-latest : réponses plus naturelles ; le périmètre reste
+# strictement les centres ressources (system prompt + citations validées).
+DEFAULT_MODEL = "mistral-medium-latest"
 
 # Repères publics, vérifiables — utilisés uniquement comme contacts d'orientation.
 REPERES = [

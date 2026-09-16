@@ -12,7 +12,7 @@ services:
       dockerfile: docker/Dockerfile.back
     environment:
       - MISTRAL_API_KEY=${MISTRAL_API_KEY:?set MISTRAL_API_KEY in .env}
-      - CHAT_MODEL=${CHAT_MODEL:-mistral-small-latest}
+      - CHAT_MODEL=${CHAT_MODEL:-mistral-medium-latest}
     restart: unless-stopped
     networks: [edge]
 
