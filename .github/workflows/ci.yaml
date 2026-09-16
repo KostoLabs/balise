@@ -21,10 +21,9 @@ jobs:
         run: |
           uv venv .venv
           uv pip install -r requirements.txt pytest ruff
-          echo "VIRTUAL_ENV=$PWD/.venv" >> "$GITHUB_ENV"
 
       - name: Lint
-        run: ruff check .
+        run: .venv/bin/ruff check .
 
       - name: Tests
-        run: python -m pytest tests/ -q
+        run: .venv/bin/python -m pytest tests/ -q
