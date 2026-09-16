@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import agent, corpus, research
+from . import agent, annuaire, corpus, research
 from .ressources import get_sources
 
 log = logging.getLogger("balise")
@@ -91,8 +91,20 @@ def _situations_ok(req: ChatRequest) -> list[str]:
 
 async def _answer(req: ChatRequest, falc: bool) -> dict:
     kws = research.keywords(req.question, _context_kw(req) + _situations_ok(req))
+    # 0) annuaire FINESS : coordonnées réelles d'établissements si la question en cherche
+    docs = []
+    try:
+        passages = annuaire.esms_passages(req.question, req.dept.nom if req.dept else None)
+    except Exception:
+        log.exception("annuaire FINESS échoué")
+        passages = []
+    if passages:
+        docs.append(type("D", (), {"centre_id": "finess", "centre_nom": "Annuaire FINESS (ANS)",
+                                   "url": "https://finess.esante.gouv.fr/",
+                                   "titre": "Annuaire public des établissements (FINESS)",
+                                   "passages": passages, "score": 50})())
     # 1) corpus local (passages vérifiés des centres ressources) — prioritaire
-    docs = corpus.corpus_search(kws)
+    docs += corpus.corpus_search(kws)
     # 2) recherche live en complément (fusion, dédoublonnée par URL)
     live = await research.research_all(req.question, _context_kw(req) + _situations_ok(req))
     seen = {d.url for d in docs}
@@ -119,7 +131,7 @@ async def _answer(req: ChatRequest, falc: bool) -> dict:
     if not ans["paras"]:
         # honnêteté : pas de contenu fabriqué sans source
         u = agent.unknown_answer(req.question, docs)
-        u["sources"] = agent.sources_payload(docs)
+        u["sources"] = agent.cited_payload(u, docs) if u.get("paras") else agent.sources_payload(docs)
         return u
 
     # unknown du modèle fiable seulement si les paras ne citent RIEN :
@@ -127,12 +139,12 @@ async def _answer(req: ChatRequest, falc: bool) -> dict:
     cited = any(agent.CITE_RE.search(p) for p in ans["paras"])
     if ans["unknown"] and not cited:
         u = agent.unknown_answer(req.question, docs)
-        u["sources"] = agent.sources_payload(docs)
+        u["sources"] = agent.cited_payload(u, docs) if u.get("paras") else agent.sources_payload(docs)
         return u
     if cited:
         ans["unknown"] = False
 
-    ans["sources"] = agent.sources_payload(docs)
+    ans["sources"] = agent.cited_payload(ans, docs)
     ans["glossary"] = agent.glossary_for(ans["paras"])
     return ans
 

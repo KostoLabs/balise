@@ -18,7 +18,7 @@ tailwind.config = {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
-<body class="bg-[var(--bg)] text-[var(--ink-800)] font-sans text-[16px] min-h-screen">
+<body class="bg-[var(--bg)] text-[var(--ink-800)] font-sans text-[16px] min-h-screen overflow-x-clip">
 
 <!-- ═══════════ HEADER ═══════════ -->
 <header class="border-b border-[var(--ink-100)]">
@@ -35,7 +35,7 @@ tailwind.config = {
       <span class="font-semibold text-[1.06em] tracking-tight text-[var(--ink-900)]">Balise</span>
     </span>
     <span class="flex-1"></span>
-    <button id="falc-btn" type="button" aria-pressed="false" class="h-[34px] px-[13px] rounded-full font-medium text-[0.82em] border cursor-pointer border-[var(--ink-200)] bg-[var(--bg-card)] text-[var(--ink-700)]">Facile à lire</button>
+    <button id="falc-btn" type="button" aria-pressed="false" title="Facile à lire et à comprendre (FALC)" class="h-[34px] px-[13px] rounded-full font-semibold tracking-[0.02em] text-[0.82em] border cursor-pointer border-[var(--ink-200)] bg-[var(--bg-card)] text-[var(--ink-700)]">FALC</button>
     <div role="group" aria-label="Taille du texte" class="flex items-center gap-0.5 p-[3px] border border-[var(--ink-200)] rounded-full">
       <button type="button" id="scale-down" aria-label="Réduire la taille du texte" class="w-7 h-7 rounded-full border-0 bg-transparent text-[var(--ink-700)] cursor-pointer text-[11px] font-semibold">A−</button>
       <button type="button" id="scale-up" aria-label="Augmenter la taille du texte" class="w-7 h-7 rounded-full border-0 bg-transparent text-[var(--ink-700)] cursor-pointer text-[14px] font-semibold">A+</button>
@@ -47,14 +47,14 @@ tailwind.config = {
   </div>
 </header>
 
-<main class="relative">
+<main class="relative overflow-x-clip">
   <div aria-hidden="true" class="absolute -top-[240px] left-1/2 -translate-x-1/2 w-[980px] h-[520px] pointer-events-none" style="background:radial-gradient(52% 52% at 50% 50%, rgba(20,96,111,.16), transparent 72%), radial-gradient(40% 40% at 74% 46%, rgba(244,162,97,.12), transparent 72%);"></div>
 
-  <div class="relative max-w-[1120px] mx-auto px-6 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_232px] gap-8 items-start">
+  <div class="relative max-w-[1120px] mx-auto px-6 flex flex-wrap gap-8 items-start">
 
     <!-- ═══════════ ZONE CHAT ═══════════ -->
-    <section class="min-w-0 pt-[52px]">
-      <h1 class="mx-auto mb-[30px] max-w-[22ch] text-center font-semibold text-[var(--ink-900)]" style="font-size:clamp(28px,4vw,42px);line-height:1.08;letter-spacing:-0.035em;">Comment puis-je vous aider ?</h1>
+    <section class="flex-1 min-w-0 basis-[420px] pt-[52px]">
+      <h1 id="title" class="mx-auto mb-[30px] max-w-[22ch] text-center font-semibold text-[var(--ink-900)]" style="font-size:clamp(28px,4vw,42px);line-height:1.08;letter-spacing:-0.035em;">Comment puis-je vous aider ?</h1>
 
       <div id="log" role="log" aria-live="polite" aria-label="Conversation avec Balise" class="max-w-[720px] mx-auto flex flex-col gap-[22px] min-h-[180px] max-h-[60vh] overflow-y-auto px-0.5"></div>
 
@@ -66,58 +66,49 @@ tailwind.config = {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
           </button>
         </form>
-        <p class="mt-2.5 flex items-center justify-center gap-1.5 text-[0.8em] text-[var(--ink-500)] text-center">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--petrol-600)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="shrink-0"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-          Hébergement HDS en France · IA française · aucune conservation de vos échanges
-        </p>
+        <div id="privacy-hint" class="flex gap-[7px] items-center justify-center mt-2.5 mx-0.5">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--petrol-600)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="shrink-0 mt-px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+          <div id="privacy-lines" class="flex flex-col gap-0"></div>
+        </div>
       </div>
     </section>
 
     <!-- ═══════════ SIDEBAR ═══════════ -->
-    <aside aria-label="Préciser le contexte (facultatif)" class="lg:sticky lg:top-6 lg:pt-[56px] flex flex-col gap-[22px] hidden lg:flex">
-      <p class="m-0 text-[0.86em] leading-relaxed text-[var(--ink-500)]">Vous pouvez répondre sans rien préciser. Ces indications affinent les réponses.</p>
+    <aside aria-label="Préciser le contexte (facultatif)" class="basis-[244px] min-w-0 grow-0 shrink-1 lg:sticky lg:top-6 lg:pt-5 flex flex-col gap-[22px] hidden lg:flex">
+      <p id="side-intro" class="m-0 text-[0.88em] leading-[1.55] text-[var(--ink-500)]">Vous pouvez poser votre question sans rien préciser. Ces indications affinent les réponses.</p>
       <div>
-        <p class="mb-2 text-[0.82em] font-medium text-[var(--ink-700)]">Vous êtes</p>
+        <p id="side-profile-label" class="mb-2 text-[0.84em] font-medium text-[var(--ink-700)]">Vous êtes</p>
         <div role="radiogroup" aria-label="Vous êtes" class="flex flex-col gap-1.5" id="profile-group"></div>
       </div>
       <div>
-        <p class="mb-2 text-[0.82em] font-medium text-[var(--ink-700)]">Département</p>
+        <p class="mb-2 text-[0.84em] font-medium text-[var(--ink-700)]" id="side-dept-label">Département</p>
         <button type="button" id="dept-btn" class="w-full text-left px-3 py-2.5 rounded-xl border text-[0.86em] cursor-pointer border-[var(--ink-200)] bg-[var(--bg-card)] text-[var(--ink-500)]">Choisir</button>
-        <button type="button" id="dept-clear" class="hidden mt-1.5 h-[26px] border-0 bg-transparent text-[var(--ink-500)] text-[0.8em] cursor-pointer underline">Retirer</button>
+        <button type="button" id="dept-clear" class="hidden mt-1.5 h-[26px] border-0 bg-transparent text-[var(--ink-500)] text-[0.82em] cursor-pointer underline">Retirer</button>
       </div>
       <div>
-        <p class="mb-2 text-[0.82em] font-medium text-[var(--ink-700)]">Situation</p>
+        <p id="side-sit-label" class="mb-2 text-[0.84em] font-medium text-[var(--ink-700)]">Situation</p>
         <div id="situations" class="flex flex-wrap gap-1.5"></div>
       </div>
       <div>
-        <p class="mb-2 text-[0.82em] font-medium text-[var(--ink-700)]">Âge</p>
+        <p id="side-age-label" class="mb-2 text-[0.84em] font-medium text-[var(--ink-700)]">Âge</p>
         <div id="ages" class="flex flex-wrap gap-1.5"></div>
       </div>
-      <button type="button" id="reset-btn" class="hidden self-start h-[30px] border-0 bg-transparent text-[var(--ink-500)] text-[0.82em] cursor-pointer underline">Nouvelle conversation</button>
+      <button type="button" id="reset-btn" class="hidden self-start h-[30px] border-0 bg-transparent text-[var(--ink-500)] text-[0.84em] cursor-pointer underline">Nouvelle conversation</button>
     </aside>
   </div>
 
   <!-- ═══════════ SOURCES ═══════════ -->
-  <section id="sources" class="relative max-w-[1120px] mx-auto px-6 pt-16">
-    <h2 class="mb-2 text-[1.3em] font-semibold tracking-tight text-[var(--ink-900)]">Les centres ressources sur lesquels je m'appuie</h2>
-    <p class="mb-5 text-[0.97em] leading-relaxed text-[var(--ink-500)] max-w-[58ch]">Uniquement leurs contenus publics : guides, fiches pratiques, annuaires, FAQ. Chaque réponse renvoie au document d'origine.</p>
-    <div id="sources-grid" class="grid gap-2.5" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr))"></div>
+  <section id="sources" class="relative max-w-[1120px] mx-auto px-6 pt-10">
+    <h2 id="src-title" class="mb-2 text-[1.3em] font-semibold tracking-[-0.02em] text-[var(--ink-900)]">Les centres ressources sur lesquels je m'appuie</h2>
+    <div id="src-intro" class="mb-5 max-w-[58ch]"></div>
+    <div id="sources-grid" class="grid gap-2.5 items-stretch" style="grid-template-columns:repeat(auto-fill,minmax(186px,1fr))"></div>
 
-    <h2 class="mt-9 mb-2 text-[1.3em] font-semibold tracking-tight text-[var(--ink-900)]">Les situations couvertes</h2>
-    <p class="mb-4 text-[0.97em] leading-relaxed text-[var(--ink-500)] max-w-[58ch]">De l'enfance à l'âge adulte, quel que soit le type de handicap.</p>
-    <div class="flex flex-wrap gap-2">
-      <span class="inline-flex items-center h-9 px-[15px] rounded-full bg-[var(--petrol-100)] text-[var(--brand-ink)] text-[0.88em] font-medium">Psychique</span>
-      <span class="inline-flex items-center h-9 px-[15px] rounded-full bg-[var(--petrol-100)] text-[var(--brand-ink)] text-[0.88em] font-medium">Autisme / TND</span>
-      <span class="inline-flex items-center h-9 px-[15px] rounded-full bg-[var(--petrol-100)] text-[var(--brand-ink)] text-[0.88em] font-medium">Handicap rare</span>
-      <span class="inline-flex items-center h-9 px-[15px] rounded-full bg-[var(--petrol-100)] text-[var(--brand-ink)] text-[0.88em] font-medium">Moteur</span>
-      <span class="inline-flex items-center h-9 px-[15px] rounded-full bg-[var(--petrol-100)] text-[var(--brand-ink)] text-[0.88em] font-medium">Sensoriel</span>
-      <span class="inline-flex items-center h-9 px-[15px] rounded-full bg-[var(--petrol-100)] text-[var(--brand-ink)] text-[0.88em] font-medium">Polyhandicap</span>
-      <span class="inline-flex items-center h-9 px-[15px] rounded-full bg-[var(--petrol-100)] text-[var(--brand-ink)] text-[0.88em] font-medium">Maladie rare</span>
-      <span class="inline-flex items-center h-9 px-[15px] rounded-full bg-[var(--petrol-100)] text-[var(--brand-ink)] text-[0.88em] font-medium">Enfant</span>
-      <span class="inline-flex items-center h-9 px-[15px] rounded-full bg-[var(--petrol-100)] text-[var(--brand-ink)] text-[0.88em] font-medium">Adolescent</span>
-      <span class="inline-flex items-center h-9 px-[15px] rounded-full bg-[var(--petrol-100)] text-[var(--brand-ink)] text-[0.88em] font-medium">Adulte</span>
-    </div>
-    <p class="mt-6 text-[0.84em] leading-[1.6] text-[var(--ink-500)] max-w-[68ch]">Balise oriente : elle ne remplace ni un avis médical, ni un conseil juridique, ni une décision de MDPH. Vos échanges sont traités en France sur une infrastructure certifiée HDS, avec un modèle d'IA français, et ne sont pas conservés après la conversation.</p>
+    <h2 id="sit-title" class="mt-9 mb-2 text-[1.3em] font-semibold tracking-[-0.02em] text-[var(--ink-900)]">Les situations couvertes</h2>
+    <div id="sit-intro" class="mb-4 max-w-[58ch]"></div>
+    <div id="sit-tags" class="flex flex-wrap gap-2"></div>
+
+    <h2 id="limits-title" class="mt-10 mb-2 text-[1.3em] font-semibold tracking-[-0.02em] text-[var(--ink-900)]">Ce que Balise ne fait pas</h2>
+    <div id="limits-list" class="max-w-[58ch]"></div>
   </section>
 
   <!-- ═══════════ MODALE DÉPARTEMENT ═══════════ -->
@@ -126,14 +117,14 @@ tailwind.config = {
       <div class="px-5 pt-[18px] pb-3.5 border-b border-[var(--ink-100)]">
         <div class="flex items-start gap-3">
           <div class="flex-1">
-            <h2 id="dept-title" class="m-0 mb-1 text-[1.05em] font-semibold tracking-tight text-[var(--ink-900)]">Votre département</h2>
-            <p class="m-0 text-[0.86em] text-[var(--ink-500)]">Facultatif — sert à proposer les bons interlocuteurs locaux.</p>
+            <h2 id="dept-title" class="m-0 mb-1 text-[1.08em] font-semibold tracking-[-0.02em] text-[var(--ink-900)]">Votre département</h2>
+            <p id="dept-help" class="m-0 text-[0.9em] leading-1.5 text-[var(--ink-700)]">Facultatif — sert à proposer les bons interlocuteurs locaux.</p>
           </div>
           <button type="button" id="dept-close" aria-label="Fermer" class="w-[34px] h-[34px] rounded-full border border-[var(--ink-200)] bg-[var(--bg-card)] text-[var(--ink-700)] cursor-pointer grid place-items-center shrink-0">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>
         </div>
-        <label for="dept-q" class="block mt-3.5 mb-1.5 text-[0.82em] font-medium text-[var(--ink-700)]">Rechercher par nom ou numéro</label>
+        <label for="dept-q" id="dept-search-label" class="block mt-3.5 mb-1.5 text-[0.86em] font-medium text-[var(--ink-700)]">Rechercher par nom ou numéro</label>
         <input id="dept-q" type="text" autocomplete="off" placeholder="Rhône, 69, Nord…" class="w-full box-border h-11 px-3.5 rounded-[14px] border-[1.5px] border-[var(--ink-200)] bg-[var(--bg)] text-[var(--ink-900)] outline-none text-[1em]">
       </div>
       <ul id="dept-list" role="listbox" aria-label="Départements" class="m-0 p-2 list-none overflow-y-auto flex-1"></ul>
@@ -146,12 +137,12 @@ tailwind.config = {
 
 <footer class="mt-[52px] border-t border-[var(--ink-100)] bg-[var(--bg-cream)]">
   <div class="max-w-[1120px] mx-auto p-6 flex gap-4 flex-wrap items-center">
-    <span class="text-[0.83em] text-[var(--ink-500)]">Balise — MVP, données publiques.</span>
+    <span class="text-[0.85em] text-[var(--ink-500)]">Balise — © KostoLabs AI 2026</span>
     <span class="flex-1"></span>
-    <nav aria-label="Liens de pied de page" class="flex gap-4 flex-wrap text-[0.83em]">
-      <a href="#sources" class="text-[var(--brand-ink)]">Mentions légales</a>
-      <a href="#sources" class="text-[var(--brand-ink)]">Accessibilité</a>
-      <a href="#sources" class="text-[var(--brand-ink)]">Hébergement &amp; données</a>
+    <nav aria-label="Liens de pied de page" class="flex gap-4 flex-wrap text-[0.85em]">
+      <a href="#sources" id="foot-legal" class="text-[var(--brand-ink)]">Mentions légales</a>
+      <a href="#sources" id="foot-a11y" class="text-[var(--brand-ink)]">Accessibilité</a>
+      <a href="#sources" id="foot-data" class="text-[var(--brand-ink)]">Hébergement &amp; données</a>
       <a href="#sources" class="text-[var(--brand-ink)]">Contact</a>
     </nav>
   </div>

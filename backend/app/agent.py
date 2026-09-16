@@ -127,8 +127,9 @@ RÈGLES ABSOLUES :
 2. Chaque affirmation factuelle doit porter un marqueur de citation [n] correspondant à la source n listée. Aucune phrase factuelle sans marqueur.
 3. Si les extraits ne permettent pas de répondre de façon fiable : mets "unknown": true et n'affirme rien.
 4. Tu ne donnes jamais de conseil médical, juridique ou de décision à la place des institutions. Tu orientes.
-5. Les contacts que tu proposes doivent venir uniquement des sources OU de la liste CONTACTS DE REPÈRE ci-dessous.
+5. Contacts : ne propose QUE des contacts directement utiles à la question posée. Si l'utilisateur cherche un établissement et que les extraits contiennent ses coordonnées (ADRESSE, TÉLÉPHONE), tu DOIS les transcrire intégralement dans la réponse : nom, adresse complète, téléphone. Le contact correspondant doit porter ces coordonnées dans "nom" ou "role". Ne propose PAS la MDPH ou la Communauté 360 par défaut : la MDPH seulement si la question porte sur les droits ou l'orientation, la Communauté 360 seulement pour une situation bloquée. N'invente jamais de coordonnées.
 6. Tonne : direct, sobre, empathique, sans pathos. Français. VOUVOIE TOUJOURS l'utilisateur, même s'il tutoie.
+7. Question de relance : si la réponse gagnerait à être précisée (type de handicap, âge de la personne, ville, orientation MDPH déjà reçue…), pose exactement UNE question courte et utile dans "followup". Sinon renvoie une chaîne vide.
 
 {falc_line}
 
@@ -148,7 +149,8 @@ Réponds STRICTEMENT en JSON valide, sans texte autour, avec ce schéma :
   "unknown": bool,
   "paras": ["paragraphe de réponse, avec marqueurs [n]", "..."],
   "steps": [{{"t": "étape courte", "d": "détail de l'étape"}}],
-  "contacts": [{{"nom": "MDPH du Rhône", "role": "ce que ce contact fait", "scope": "Local|Régional|National", "url": "https://..."}}]
+  "contacts": [{{"nom": "MDPH du Rhône", "role": "ce que ce contact fait", "scope": "Local|Régional|National", "url": "https://..."}}],
+  "followup": "une seule question de relance courte pour affiner la réponse, ou chaîne vide"
 }}
 Si tu n'as pas d'étapes ou de contacts utiles, renvoie des listes vides.
 IMPORTANT : les marqueurs de citation sont des NUMÉROS entre crochets ([1], [2]…) qui référencent la source n de la liste SOURCES. Jamais de texte entre crochets."""
@@ -198,6 +200,7 @@ def _clean(data: dict, docs) -> dict:
         "paras": paras,
         "steps": steps,
         "contacts": contacts,
+        "followup": str(data.get("followup", "")).strip()[:300],
     }
 
 
@@ -263,6 +266,19 @@ def unknown_answer(question: str, docs) -> dict:
         "contacts": REPERES[:2],
         "glossary": {k: v for k, v in GLOSSARY.items()},
     }
+
+
+def cited_payload(ans: dict, docs) -> list[dict]:
+    """Sources réellement citées dans la réponse ([n] valides uniquement).
+
+    Évite d'afficher des documents consultés mais jamais utilisés : ils donnent
+    une impression de citations décoratives et polluent la traçabilité.
+    """
+    text = " ".join(ans.get("paras", []))
+    for s in ans.get("steps", []):
+        text += " " + s.get("t", "") + " " + s.get("d", "")
+    used = {int(m) for m in CITE_RE.findall(text)}
+    return [p for p in sources_payload(docs) if p["n"] in used]
 
 
 def sources_payload(docs) -> list[dict]:
