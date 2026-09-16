@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [Live]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install
+        run: uv pip install --system -r requirements.txt pytest ruff
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Tests
+        run: python -m pytest tests/ -q

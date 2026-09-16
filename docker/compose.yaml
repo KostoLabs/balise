@@ -1,0 +1,21 @@
+name: balise
+
+services:
+  back:
+    build:
+      context: ../backend
+      dockerfile: ../docker/Dockerfile.back
+    environment:
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:?set MISTRAL_API_KEY in .env}
+      - CHAT_MODEL=${CHAT_MODEL:-mistral-small-latest}
+    restart: unless-stopped
+
+  front:
+    build:
+      context: ../frontend
+      dockerfile: ../docker/Dockerfile.front
+    ports:
+      - "3000:80"
+    depends_on:
+      - back
+    restart: unless-stopped
