@@ -24,4 +24,6 @@ services:
     depends_on:
       - back
     restart: unless-stopped
-    networks: [edge]
+    networks:
+      edge:
+        aliases: [balise-front]
