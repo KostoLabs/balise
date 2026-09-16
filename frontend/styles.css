@@ -46,11 +46,15 @@ button[aria-pressed="true"].bh-toggle {
   color: var(--brand-ink) !important;
 }
 
-.sigle-btn { border: 0; background: transparent; padding: 0; font: inherit; color: var(--brand-ink); font-weight: 600; cursor: help; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; position: relative; }
-.sigle-tip { position: absolute; z-index: 20; bottom: calc(100% + 8px); left: 0; width: 280px; background: var(--petrol-900); color: #fff; font-size: 0.82em; line-height: 1.45; font-weight: 400; padding: 10px 12px; border-radius: 14px; box-shadow: var(--shadow-xl); display: block; }
+.sigle-btn { border: 0; background: transparent; padding: 0; font: inherit; color: var(--brand-ink); font-weight: 600; cursor: help; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+.sigle-tip { display: block; margin: 9px 0 11px; max-width: 420px; background: var(--petrol-900); color: #fff; font-size: 0.86em; line-height: 1.55; font-weight: 400; padding: 11px 14px; border-radius: 14px; box-shadow: var(--shadow-xl); }
 
-cite-n, .cite-n { font-size: 0.72em; vertical-align: super; line-height: 0; margin-left: 1px; color: var(--petrol-600); font-weight: 600; text-decoration: none; }
+.cite-n { font-size: 0.72em; vertical-align: super; line-height: 0; margin-left: 1px; color: var(--petrol-600); font-weight: 600; text-decoration: none; }
 .cite-n:hover { color: var(--ink-900); }
+
+/* FALC : colonne conversation alignée à gauche */
+.falc-log { margin-left: 0 !important; margin-right: 0 !important; }
+.falc-composer { margin-left: 0 !important; margin-right: 0 !important; }
 
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 
