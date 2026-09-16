@@ -128,12 +128,14 @@ def parse_search_results(
         title = html_mod.unescape(title)
         if len(title) < 8 or len(title) > 200:
             continue
-        # Écarte les liens de navigation génériques
+        # Écarte les liens de navigation génériques et les menus « événements de vie »
         low = title.lower()
         if any(x in low for x in ("accueil", "mentions légales", "plan du site", "se connecter",
                                   "newsletter", "contact", "recherche", "cookie",
                                   "confidentialit", "rgpd", "données personnelles",
-                                  "politique de")):
+                                  "politique de", "je déménage", "j'achète", "je deviens parent",
+                                  "je cherche un emploi", "je prépare ma retraite", "crédit immobilier",
+                                  "un proche est décédé", "événements de vie")):
             continue
         if url not in seen:
             seen.add(url)

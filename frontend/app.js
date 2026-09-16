@@ -309,9 +309,21 @@ function renderDeptList(q) {
     .map(d => `<li><button type="button" role="option" data-c="${d.code}" data-n="${esc(d.nom)}" class="flex items-center gap-3 w-full text-left px-3 py-[11px] rounded-[14px] border-0 cursor-pointer bg-transparent hover:bg-[var(--petrol-50)]"><span class="font-mono text-[0.85em] text-[var(--ink-500)] w-[30px] shrink-0">${d.code}</span><span class="text-[0.97em] text-[var(--ink-900)]">${esc(d.nom)}</span></button></li>`).join("");
   $("#dept-list").querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
     S.dept = { code: b.dataset.c, nom: b.dataset.n }; S.deptSkipped = false;
-    $("#dept-modal").classList.add("hidden");
+    closeDeptModal();
     renderSidebar();
+    scrollLog(); // la conversation reste au premier plan après la modale
   }));
+}
+
+/* modale : verrouille le défilement de la page derrière, restaure à la fermeture */
+function openDeptModal() {
+  $("#dept-modal").classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+  renderDeptList("");
+}
+function closeDeptModal() {
+  $("#dept-modal").classList.add("hidden");
+  document.body.style.overflow = "";
 }
 
 /* ═══════════ INIT ═══════════ */
@@ -330,11 +342,12 @@ const SCALES = ["s", "m", "l"];
 let scaleIdx = 0;
 $("#scale-up").addEventListener("click", () => { scaleIdx = Math.min(2, scaleIdx + 1); document.documentElement.dataset.scale = SCALES[scaleIdx]; });
 $("#scale-down").addEventListener("click", () => { scaleIdx = Math.max(0, scaleIdx - 1); document.documentElement.dataset.scale = SCALES[scaleIdx]; });
-$("#dept-btn").addEventListener("click", () => { $("#dept-modal").classList.remove("hidden"); renderDeptList(""); });
-$("#dept-close").addEventListener("click", () => $("#dept-modal").classList.add("hidden"));
-$("#dept-skip").addEventListener("click", () => { S.deptSkipped = true; S.dept = null; $("#dept-modal").classList.add("hidden"); renderSidebar(); });
+$("#dept-btn").addEventListener("click", openDeptModal);
+$("#dept-close").addEventListener("click", closeDeptModal);
+$("#dept-skip").addEventListener("click", () => { S.deptSkipped = true; S.dept = null; closeDeptModal(); renderSidebar(); });
 $("#dept-q").addEventListener("input", e => renderDeptList(e.target.value));
-$("#dept-modal").addEventListener("click", e => { if (e.target.id === "dept-modal") $("#dept-modal").classList.add("hidden"); });
+$("#dept-modal").addEventListener("click", e => { if (e.target.id === "dept-modal") closeDeptModal(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#dept-modal").classList.contains("hidden")) closeDeptModal(); });
 
 renderWelcome();
 renderSidebar();

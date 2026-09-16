@@ -50,7 +50,7 @@ trouvées servent de contexte au modèle.
 |---|---|
 | Front | HTML / CSS / Tailwind (Play CDN), JS vanilla |
 | Back | Python 3.12, FastAPI, httpx |
-| LLM | Mistral AI (`mistral-small-latest`), citations obligatoires |
+| LLM | Mistral AI (`mistral-medium-latest`), citations obligatoires |
 | Déploiement | Docker + docker compose |
 
 ## Monorepo
@@ -91,7 +91,7 @@ docker compose -f docker/compose.yaml up -d --build
 | Variable | Rôle |
 |---|---|
 | `MISTRAL_API_KEY` | clé API Mistral (requis pour `/api/chat`) |
-| `CHAT_MODEL` | modèle de synthèse (défaut : `mistral-small-latest`) |
+| `CHAT_MODEL` | modèle de synthèse (défaut : `mistral-medium-latest`) |
 
 ## CI minimale
 
