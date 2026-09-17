@@ -36,3 +36,11 @@ def test_simplification_replaces_the_whole_answer_packet():
     assert "b.remove()" in section
     assert "botBubble(ans2, question, !falcView, ans)" in section
     assert 'querySelectorAll("p, ol")' not in section
+
+
+def test_frontend_healthcheck_uses_ipv4_loopback():
+    dockerfile = (
+        Path(__file__).resolve().parents[2] / "docker" / "Dockerfile.front"
+    ).read_text()
+    assert "http://127.0.0.1/" in dockerfile
+    assert "http://localhost/" not in dockerfile
