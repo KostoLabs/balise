@@ -43,7 +43,7 @@ const T_STD = {
   sideAge: "Âge",
   newConv: "Nouvelle conversation",
   contacts: "Qui contacter ?",
-  unknownBanner: "Je ne sais pas répondre de façon fiable. Voici vers qui vous tourner.",
+  unknownBanner: "Je ne sais pas répondre de façon fiable avec les sources disponibles.",
   fbUp: "Utile", fbDown: "Pas utile",
   simplify: "Reformuler plus simplement", unsimplify: "Version détaillée",
   feedbackAsk: "Cette réponse vous aide ?",
@@ -88,7 +88,7 @@ const T_FALC = {
   sideAge: "Quel âge ?",
   newConv: "Recommencer",
   contacts: "Qui peut vous aider ?",
-  unknownBanner: "Je ne connais pas la réponse. Voici qui peut vous aider.",
+  unknownBanner: "Je ne connais pas la réponse dans les guides disponibles.",
   fbUp: "Oui", fbDown: "Non",
   simplify: "Réponse plus simple", unsimplify: "Réponse plus longue",
   feedbackAsk: "Cette réponse vous aide ?",
@@ -117,47 +117,6 @@ const T_FALC = {
   deptSearch: "Écrivez le nom ou le numéro",
   deptSkip: "Je ne veux pas le dire",
   footLegal: "Qui écrit ce site", footA11y: "Accessibilité", footData: "Vos informations",
-};
-
-/* ═══════════ GLOSSAIRES (design v2) ═══════════ */
-const GLOSS = {
-  MDPH: "Maison départementale des personnes handicapées : le guichet unique de votre département. C'est elle qui reçoit les demandes, évalue la situation et ouvre les droits.",
-  CDAPH: "Commission des droits et de l'autonomie des personnes handicapées : la commission, au sein de la MDPH, qui prend les décisions (droits, orientations).",
-  IME: "Institut médico-éducatif : établissement qui accueille en journée des enfants avec une déficience intellectuelle, avec école et soins sur place.",
-  ESMS: "Établissement ou service médico-social : la famille d'établissements et de services (IME, SESSAD, foyer, SAVS…) qui accompagnent au quotidien.",
-  SESSAD: "Service d'éducation spéciale et de soins à domicile : une équipe qui intervient là où vit et apprend l'enfant, y compris à l'école.",
-  SAVS: "Service d'accompagnement à la vie sociale : soutien social et éducatif pour un adulte qui vit chez lui. Pas de soins dans ses missions.",
-  SAMSAH: "Service d'accompagnement médico-social pour adultes handicapés : comme un SAVS, mais avec en plus une équipe de soins coordonnés.",
-  DAC: "Dispositif d'appui à la coordination : appui aux professionnels et aux personnes pour les situations complexes, quel que soit l'âge ou la pathologie.",
-  PCPE: "Pôle de compétences et de prestations externalisées : finance et coordonne des interventions sur mesure quand aucune place n'est disponible.",
-  CRA: "Centre ressources autisme : ressource régionale d'information, d'appui au diagnostic et de formation sur l'autisme.",
-  CReHPsy: "Centre ressource handicap psychique : ressource régionale pour les situations de handicap d'origine psychique.",
-  PCO: "Plateforme de coordination et d'orientation : parcours de bilan et d'intervention précoce, avant diagnostic, pour les troubles du neurodéveloppement.",
-  AEEH: "Allocation d'éducation de l'enfant handicapé : aide financière versée aux parents d'un enfant en situation de handicap.",
-  PCH: "Prestation de compensation du handicap : aide qui finance les besoins liés au handicap (aide humaine, technique, aménagements).",
-  AESH: "Accompagnant d'élève en situation de handicap : la personne qui accompagne l'élève en classe.",
-  "Communauté 360": "Numéro et réseau départemental (0 800 360 360) qui construisent une réponse avec la personne quand plus rien ne fonctionne.",
-  "GEVA-Sco": "Document d'évaluation scolaire renseigné par l'équipe éducative et joint au dossier MDPH.",
-};
-
-const GLOSS_FALC = {
-  MDPH: "le bureau du handicap de votre département",
-  CDAPH: "le groupe qui décide à la MDPH",
-  IME: "une école avec des soins pour les enfants",
-  ESMS: "un service ou une maison qui accompagne",
-  SESSAD: "une équipe qui vient à la maison ou à l'école",
-  SAVS: "un service qui aide un adulte chez lui",
-  SAMSAH: "comme le SAVS, avec des soins en plus",
-  DAC: "un service qui aide les professionnels à s'organiser",
-  PCPE: "un service qui paie des professionnels pour vous",
-  CRA: "le centre qui s'y connaît en autisme",
-  CReHPsy: "le centre qui s'y connaît en maladie psychique",
-  PCO: "un service pour les enfants de moins de 7 ans",
-  AEEH: "de l'argent pour les parents",
-  PCH: "de l'argent pour payer de l'aide",
-  AESH: "une personne qui aide l'élève en classe",
-  "Communauté 360": "un numéro gratuit pour trouver de l'aide",
-  "GEVA-Sco": "un papier rempli par l'école",
 };
 
 /* ═══════════ SUGGESTIONS (std + falc) ═══════════ */
@@ -254,15 +213,7 @@ function renderRich(text, glossary) {
   if (glossary) {
     for (const [sigle, def] of Object.entries(glossary)) {
       const re = new RegExp(`\\b(${sigle.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")})\\b`, "g");
-      const short = GLOSS_FALC[sigle];
-      if (S.falc && short) {
-        // FALC : glose courte entre parenthèses, sauf si elle répète la phrase
-        const note = short && !text.toLowerCase().includes(short.toLowerCase())
-          ? ` <span class="text-[var(--ink-700)]">(${esc(short)})</span>` : "";
-        html = html.replace(re, `<button type="button" class="sigle-btn" data-def="${esc(def)}">$1</button>` + note);
-      } else {
-        html = html.replace(re, `<button type="button" class="sigle-btn" data-def="${esc(def)}">$1</button>`);
-      }
+      html = html.replace(re, `<button type="button" class="sigle-btn" data-def="${esc(def)}">$1</button>`);
     }
   }
   return html;
@@ -298,7 +249,8 @@ function typingBubble() {
   return b;
 }
 
-function botBubble(ans, question) {
+function botBubble(ans, question, falcView = S.falc, alternateAnswer = null) {
+  const copy = falcView ? T_FALC : T_STD;
   const b = el("div", "flex gap-3.5 w-full bh-in");
   const body = el("div", "flex-1 min-w-0");
   let inner = "";
@@ -306,12 +258,12 @@ function botBubble(ans, question) {
   if (ans.unknown) {
     inner += `<div class="flex gap-2.5 items-start bg-[var(--warm-yellow-light)] rounded-2xl p-3 mb-3.5">
       <span class="text-[var(--warm-coral)] shrink-0 mt-0.5">${IC.alert}</span>
-      <p class="m-0 text-[0.94em] leading-[1.55] text-[var(--ink-800)]">${esc(T().unknownBanner)}</p>
+      <p class="m-0 text-[0.94em] leading-[1.55] text-[var(--ink-800)]">${esc(copy.unknownBanner)}</p>
     </div>`;
   }
 
   for (const p of ans.paras || []) {
-    if (S.falc) {
+    if (falcView) {
       inner += `<div class="flex gap-3 items-start mb-3.5">${picto(pickPicto(p))}<p class="m-0 flex-1 min-w-0 text-[1.1em] leading-[1.75] text-[var(--ink-800)] text-left max-w-[46ch]">${renderRich(p, ans.glossary)}</p></div>`;
     } else {
       inner += `<p class="m-0 mb-3 text-[1.02em] leading-[1.68] text-[var(--ink-800)]">${renderRich(p, ans.glossary)}</p>`;
@@ -320,7 +272,7 @@ function botBubble(ans, question) {
 
   if (ans.steps && ans.steps.length) {
     inner += `<ol class="m-1.5 mb-4 p-0 list-none flex flex-col gap-0.5">` + ans.steps.map((s, i) =>
-      S.falc
+      falcView
         ? `<li class="flex gap-3 items-start py-3 border-t border-[var(--ink-100)]">
             <span class="grid place-items-center w-7 h-7 shrink-0 rounded-full bg-[var(--petrol-100)] text-[var(--brand-ink)] font-mono text-[0.9em] font-semibold">${i + 1}</span>
             <span class="text-[1.05em] leading-[1.7] text-[var(--ink-800)] pt-0.5">${esc(s.d || s.t)}</span>
@@ -332,7 +284,7 @@ function botBubble(ans, question) {
   }
 
   if (ans.contacts && ans.contacts.length) {
-    inner += `<p class="m-0 mb-2 ${S.falc ? "text-[0.94em] font-semibold text-[var(--ink-900)]" : "text-[0.78em] font-semibold tracking-[0.1em] uppercase text-[var(--brand-ink)]"}">${esc(T().contacts)}</p>
+    inner += `<p class="m-0 mb-2 ${falcView ? "text-[0.94em] font-semibold text-[var(--ink-900)]" : "text-[0.78em] font-semibold tracking-[0.1em] uppercase text-[var(--brand-ink)]"}">${esc(copy.contacts)}</p>
     <div class="grid gap-2.5 mb-3.5" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">` + ans.contacts.map(c =>
       `<div class="border border-[var(--ink-100)] bg-[var(--bg-card)] rounded-2xl p-[13px] px-[15px] flex flex-col gap-1.5">
         <div class="flex items-center gap-2 justify-between flex-wrap"><span class="text-[0.96em] font-semibold text-[var(--ink-900)]">${esc(c.nom)}</span>${badge(c.scope)}</div>
@@ -343,7 +295,7 @@ function botBubble(ans, question) {
 
   if (ans.sources && ans.sources.length) {
     inner += `<details open class="border-t border-dashed border-[var(--ink-200)] pt-3 mt-1">
-      <summary class="cursor-pointer ${S.falc ? "text-[0.9em] font-semibold text-[var(--ink-700)]" : "text-[0.8em] font-semibold tracking-[0.06em] text-[var(--ink-500)]"}">${S.falc ? "Les guides que j'ai lus" : "SOURCES (" + ans.sources.length + ")"}</summary>
+      <summary class="cursor-pointer ${falcView ? "text-[0.9em] font-semibold text-[var(--ink-700)]" : "text-[0.8em] font-semibold tracking-[0.06em] text-[var(--ink-500)]"}">${falcView ? "Les guides que j'ai lus" : "SOURCES (" + ans.sources.length + ")"}</summary>
       <ul class="mt-2.5 mb-0 p-0 list-none flex flex-col gap-2.25">` + ans.sources.map(s =>
       `<li id="src-${s.n}" class="flex gap-2.5 items-start">
         <span class="text-[0.89em] leading-1.5"><a href="${esc(s.url)}" target="_blank" rel="noopener" class="font-medium">${esc(s.doc)}</a>
@@ -351,13 +303,13 @@ function botBubble(ans, question) {
       </li>`).join("") + `</ul></details>`;
   }
 
-  const fb = S.falc;
+  const fb = falcView;
   inner += `<div class="flex items-center gap-2 flex-wrap mt-3.5">
-    <span class="feedback-label text-[${fb ? "0.86" : "0.82"}em] text-[var(--ink-500)]">${esc(T().feedbackAsk)}</span>
-    <button type="button" class="fb-up inline-flex items-center gap-1.5 h-[34px] px-3 rounded-full border border-[var(--ink-200)] bg-[var(--bg-card)] text-[var(--ink-700)] text-[0.84em] cursor-pointer">${esc(T().fbUp)}</button>
-    <button type="button" class="fb-down inline-flex items-center gap-1.5 h-[34px] px-3 rounded-full border border-[var(--ink-200)] bg-[var(--bg-card)] text-[var(--ink-700)] text-[0.84em] cursor-pointer">${esc(T().fbDown)}</button>
+    <span class="feedback-label text-[${fb ? "0.86" : "0.82"}em] text-[var(--ink-500)]">${esc(copy.feedbackAsk)}</span>
+    <button type="button" class="fb-up inline-flex items-center gap-1.5 h-[34px] px-3 rounded-full border border-[var(--ink-200)] bg-[var(--bg-card)] text-[var(--ink-700)] text-[0.84em] cursor-pointer">${esc(copy.fbUp)}</button>
+    <button type="button" class="fb-down inline-flex items-center gap-1.5 h-[34px] px-3 rounded-full border border-[var(--ink-200)] bg-[var(--bg-card)] text-[var(--ink-700)] text-[0.84em] cursor-pointer">${esc(copy.fbDown)}</button>
     <span class="flex-1"></span>
-    <button type="button" class="simplify-btn inline-flex items-center gap-1.5 h-[34px] px-3 rounded-full border border-[var(--ink-200)] bg-[var(--bg-card)] text-[var(--ink-700)] text-[0.84em] cursor-pointer">${esc(fb ? T().unsimplify : T().simplify)}</button>
+    <button type="button" class="simplify-btn inline-flex items-center gap-1.5 h-[34px] px-3 rounded-full border border-[var(--ink-200)] bg-[var(--bg-card)] text-[var(--ink-700)] text-[0.84em] cursor-pointer">${esc(fb ? copy.unsimplify : copy.simplify)}</button>
   </div>`;
   if (ans.followup) {
     inner += `<button type="button" class="followup-btn mt-3 w-full text-left flex items-center gap-2.5 px-4 py-3 rounded-2xl border border-[var(--petrol-100)] bg-[var(--petrol-50)] text-[0.95em] text-[var(--ink-800)] cursor-pointer hover:border-[var(--petrol-600)]"><span class="text-[var(--petrol-600)] shrink-0" aria-hidden="true">↳</span><span>${esc(ans.followup)}</span></button>`;
@@ -386,22 +338,31 @@ function botBubble(ans, question) {
     const was = on.dataset.on === "1";
     up.dataset.on = "0"; down.dataset.on = "0";
     on.classList.remove("bh-toggle"); off.classList.remove("bh-toggle");
-    if (!was) { on.dataset.on = "1"; on.classList.add("bh-toggle"); lbl.textContent = kind === "up" ? T().feedbackUp : T().feedbackDown; }
-    else lbl.textContent = T().feedbackAsk;
+    if (!was) { on.dataset.on = "1"; on.classList.add("bh-toggle"); lbl.textContent = kind === "up" ? copy.feedbackUp : copy.feedbackDown; }
+    else lbl.textContent = copy.feedbackAsk;
   };
   up.addEventListener("click", () => setFb("up"));
   down.addEventListener("click", () => setFb("down"));
   body.querySelector(".simplify-btn").addEventListener("click", async (e) => {
+    if (alternateAnswer) {
+      b.remove();
+      botBubble(alternateAnswer, question, !falcView, ans);
+      return;
+    }
     const btn = e.currentTarget;
     btn.disabled = true; btn.textContent = "…";
-    const ans2 = await postChat("/api/chat/simplify", { question, falc: true, history: [] });
-    btn.disabled = false; btn.textContent = T().unsimplify;
+    const path = falcView ? "/api/chat" : "/api/chat/simplify";
+    const ans2 = await postChat(path, {
+      question,
+      falc: !falcView,
+      history: [],
+    });
     if (ans2) {
-      body.querySelectorAll("p, ol").forEach(n => n.remove());
-      body.insertAdjacentHTML("afterbegin", (ans2.paras || []).map(p =>
-        S.falc
-          ? `<div class="flex gap-3 items-start mb-3.5">${picto(pickPicto(p))}<p class="m-0 flex-1 min-w-0 text-[1.1em] leading-[1.75] text-[var(--ink-800)] text-left max-w-[46ch]">${renderRich(p, ans2.glossary)}</p></div>`
-          : `<p class="m-0 mb-3 text-[1.02em] leading-[1.68] text-[var(--ink-800)]">${renderRich(p, ans2.glossary)}</p>`).join(""));
+      b.remove();
+      botBubble(ans2, question, !falcView, ans);
+    } else {
+      btn.disabled = false;
+      btn.textContent = falcView ? copy.unsimplify : copy.simplify;
     }
   });
   const fu = body.querySelector(".followup-btn");
@@ -467,7 +428,6 @@ async function ask(question) {
   } else {
     botBubble(ans, question);
     S.history.push({ role: "user", content: question });
-    S.history.push({ role: "assistant", content: (ans.paras || []).join(" ") });
   }
   S.busy = false;
   $("#reset-btn").classList.remove("hidden");

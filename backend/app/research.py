@@ -11,6 +11,7 @@ import asyncio
 import html as html_mod
 import re
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from urllib.parse import quote_plus, urljoin, urlparse
 
 import httpx
@@ -23,7 +24,6 @@ UA = (
 )
 
 # ---- Extraction de texte (HTMLParser stdlib — pas de dépendance externe) ----
-from html.parser import HTMLParser
 
 BLOCK_TAGS = {
     "p", "li", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote",
@@ -218,14 +218,18 @@ class Doc:
     score: int = 0
 
 
-async def fetch(client: httpx.AsyncClient, url: str) -> str:
+async def fetch(
+    client: httpx.AsyncClient, url: str, allowed_domains: list[str]
+) -> tuple[str, str]:
+    """Télécharge une page et refuse toute redirection hors allowlist."""
     try:
-        r = await client.get(url)
-        if r.status_code == 200:
-            return r.text
+        response = await client.get(url)
+        final_url = str(response.url)
+        if response.status_code == 200 and _allowed(final_url, allowed_domains):
+            return response.text, final_url
     except httpx.HTTPError:
         pass
-    return ""
+    return "", ""
 
 
 async def research_one(
@@ -237,6 +241,9 @@ async def research_one(
     """
     max_docs = 3
     docs: list[Doc] = []
+    allowed_domains = site.get("allowed_domains") or [
+        _netloc(site["url"]).removeprefix("www.")
+    ]
 
     candidates: list[tuple[str, str]] = []
     if site.get("search_url"):
@@ -244,9 +251,9 @@ async def research_one(
         url = site["search_url"].format(q=q)
         # httpx ré-encode le % : construire l'URL en deux temps pour l'éviter
         url = url.replace("%25", "%").replace("%2B", "+")
-        html = await fetch(client, url)
+        html, _ = await fetch(client, url, allowed_domains)
         candidates = parse_search_results(
-            html, site["url"], site.get("result_link"), site.get("allowed_domains")
+            html, site["url"], site.get("result_link"), allowed_domains
         )
 
     # Extraction des passages pour les meilleurs candidats
@@ -256,12 +263,12 @@ async def research_one(
     )
     fetched: list[tuple[str, str, list[str]]] = []
     for page_url, title in candidates[: max_docs * 2]:
-        html = await fetch(client, page_url)
+        html, final_url = await fetch(client, page_url, allowed_domains)
         if not html:
             continue
         blocks = html_blocks(html)
         if blocks:
-            fetched.append((page_url, title, blocks))
+            fetched.append((final_url, title, blocks))
     if not fetched:
         return docs
 
@@ -298,6 +305,39 @@ async def research_one(
         t = d.titre.lower()
         d.score += sum(3 for k in kws[:6] if k in t)
     return docs
+
+
+async def research_queries(
+    queries: list[str], extra_context: list[str], timeout: float = 12.0
+) -> list[Doc]:
+    """Recherche toutes les reformulations en parallèle sur chaque centre."""
+    planned = [" ".join(q.split())[:120] for q in queries[:3] if q.strip()]
+    if not planned:
+        return []
+    async with httpx.AsyncClient(
+        headers={"User-Agent": UA, "Accept-Language": "fr"},
+        follow_redirects=True,
+        timeout=timeout,
+    ) as client:
+        tasks = [
+            research_one(client, site, query, keywords(query, extra_context))
+            for query in planned
+            for site in SITES
+            if site.get("search_url")
+        ]
+        results = await asyncio.gather(*tasks)
+
+    docs = [doc for group in results for doc in group]
+    per_centre: dict[str, int] = {}
+    seen_urls: set[str] = set()
+    diverse: list[Doc] = []
+    for doc in sorted(docs, key=lambda d: -d.score):
+        if doc.url in seen_urls or per_centre.get(doc.centre_id, 0) >= 2:
+            continue
+        seen_urls.add(doc.url)
+        per_centre[doc.centre_id] = per_centre.get(doc.centre_id, 0) + 1
+        diverse.append(doc)
+    return diverse
 
 
 async def research_all(question: str, extra_context: list[str], timeout: float = 12.0) -> list[Doc]:

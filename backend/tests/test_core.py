@@ -1,7 +1,7 @@
 """Tests du noyau Balise : extraction, scoring, citations — sans réseau."""
 
 
-from app.agent import _validate_citations, glossary_for, sources_payload
+from app.agent import _validate_citations, sources_payload
 from app.research import html_blocks, keywords, parse_search_results, score_block
 
 
@@ -66,9 +66,3 @@ def test_sources_payload_numbering():
     payload = sources_payload(docs)
     assert [p["n"] for p in payload] == [1, 2]
     assert payload[0]["doc"] == "Guide MDPH"
-
-
-def test_glossary_for_only_present_sigles():
-    g = glossary_for(["La MDPH évalue le dossier ; la CDAPH décide. Les ESMS accueillent."])
-    assert "MDPH" in g and "CDAPH" in g and "ESMS" in g
-    assert "IME" not in g

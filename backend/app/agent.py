@@ -4,7 +4,7 @@ Contrat :
 - la réponse est produite UNIQUEMENT à partir des passages fournis ;
 - chaque affirmation porte un marqueur de citation [n] référençant une source ;
 - si les passages ne suffisent pas, l'agent répond `unknown` (je ne sais pas)
-  et propose des contacts de repère (publics, vérifiables) ;
+  sans injecter de contenu ou contact non sourcé ;
 - les marqueurs invalides sont supprimés à la validation (aucune citation
   ne peut pointer vers une source inexistante).
 """
@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import unicodedata
 from typing import Any
 
 from mistralai.client import Mistral
@@ -21,54 +22,6 @@ from mistralai.client import Mistral
 # mistral-medium-latest : réponses plus naturelles ; le périmètre reste
 # strictement les centres ressources (system prompt + citations validées).
 DEFAULT_MODEL = "mistral-medium-latest"
-
-# Repères publics, vérifiables — utilisés uniquement comme contacts d'orientation.
-REPERES = [
-    {
-        "nom": "MDPH de votre département",
-        "role": "Guichet unique : dépôt du dossier, évaluation, décisions (CDAPH).",
-        "scope": "Local",
-        "url": "https://lannuaire.service-public.gouv.fr/navigation/maison_handicapees",
-    },
-    {
-        "nom": "Communauté 360",
-        "role": "0 800 360 360 — appui départemental quand une situation est bloquée.",
-        "scope": "Local",
-        "url": "https://solidarites-sante.gouv.fr/affaires-sociales-et-familiales/handicap/article/communaute-360",
-    },
-    {
-        "nom": "MDPH en ligne (CNSA)",
-        "role": "Téléservices et fiches pratiques pour préparer les démarches.",
-        "scope": "National",
-        "url": "https://mdphenligne.cnsa.fr/",
-    },
-    {
-        "nom": "Autisme Info Service",
-        "role": "0 800 71 40 40 — information et écoute sur l'autisme et les TND.",
-        "scope": "National",
-        "url": "https://autismeinfoservice.fr/",
-    },
-]
-
-GLOSSARY = {
-    "MDPH": "Maison départementale des personnes handicapées : le guichet unique de votre département. C'est elle qui reçoit les demandes, évalue la situation et ouvre les droits.",
-    "CDAPH": "Commission des droits et de l'autonomie des personnes handicapées : la commission, au sein de la MDPH, qui prend les décisions (droits, orientations).",
-    "IME": "Institut médico-éducatif : établissement qui accueille en journée des enfants avec une déficience intellectuelle, avec école et soins sur place.",
-    "ESMS": "Établissement ou service médico-social : la famille d'établissements et de services (IME, SESSAD, foyer, SAVS…) qui accompagnent au quotidien.",
-    "SESSAD": "Service d'éducation spéciale et de soins à domicile : une équipe qui intervient là où vit et apprend l'enfant, y compris à l'école.",
-    "SAVS": "Service d'accompagnement à la vie sociale : soutien social et éducatif pour un adulte qui vit chez lui.",
-    "SAMSAH": "Service d'accompagnement médico-social pour adultes handicapés : comme un SAVS, mais avec en plus une équipe de soins coordonnés.",
-    "DAC": "Dispositif d'appui à la coordination : appui aux professionnels et aux personnes pour les situations complexes, quel que soit l'âge ou la pathologie.",
-    "PCPE": "Pôle de compétences et de prestations externalisées : finance et coordonne des interventions sur mesure quand aucune place n'est disponible.",
-    "CRA": "Centre ressources autisme : ressource régionale d'information, d'appui au diagnostic et de formation sur l'autisme.",
-    "CReHPsy": "Centre ressource handicap psychique : ressource régionale pour les situations de handicap d'origine psychique.",
-    "PCO": "Plateforme de coordination et d'orientation : parcours de bilan et d'intervention précoce, avant diagnostic, pour les troubles du neurodéveloppement.",
-    "AEEH": "Allocation d'éducation de l'enfant handicapé : aide financière versée aux parents d'un enfant en situation de handicap.",
-    "PCH": "Prestation de compensation du handicap : aide qui finance les besoins liés au handicap (aide humaine, technique, aménagements).",
-    "AESH": "Accompagnant d'élève en situation de handicap : la personne qui accompagne l'élève en classe.",
-    "GEVA-Sco": "Document d'évaluation scolaire renseigné par l'équipe éducative et joint au dossier MDPH.",
-}
-
 
 def _sources_block(docs) -> str:
     lines = []
@@ -132,43 +85,50 @@ def _system_prompt(profile: str, falc: bool, dept, situations, age, docs) -> str
         "oriente vers les bons interlocuteurs."
     )
 
-    return f"""Tu es Balise, un agent d'information et d'orientation sur le handicap en France.
+    return f"""Tu es le synthétiseur de Balise, un agent d'information et d'orientation sur le handicap en France.
 {profile_line}
 {ctx_line}
 
-RÈGLES ABSOLUES :
-1. Tu ne t'appuies QUE sur les EXTRAITS ci-dessous, issus de centres ressources publics. Tu n'utilises aucune autre connaissance.
-2. Chaque affirmation factuelle doit porter un marqueur de citation [n] correspondant à la source n listée. Aucune phrase factuelle sans marqueur.
-3. Si les extraits ne permettent pas de répondre de façon fiable : mets "unknown": true et n'affirme rien. ATTENTION : si un extrait contient DIRECTEMENT la réponse demandée — en particulier des coordonnées d'établissement (annuaire FINESS : nom, adresse, téléphone), une définition, un texte de loi — il PERMET de répondre : unknown est interdit dans ce cas. Transcris la réponse depuis l'extrait.
-4. Tu ne donnes jamais de conseil médical, juridique ou de décision à la place des institutions. Tu orientes.
-5. La réponse doit être SUBSTANCIELLE et directement utile : ce que le dispositif est, à quoi il sert concrètement, pour qui, comment ça se passe, qui pilote/finance, points d'attention. Pas de remplissage, pas de généralités. Si la question est professionnelle, réponds au niveau professionnel.
-6. Contacts : UNIQUEMENT des interlocuteurs directement utiles à la question posée, précisés dans les extraits. Si les extraits contiennent des coordonnées (ADRESSE, TÉLÉPHONE), transcris-les intégralement dans la réponse et le contact. Ne propose jamais MDPH/Communauté 360 par défaut : MDPH seulement si la question porte sur les droits/l'orientation, Communauté 360 seulement pour une situation bloquée. N'invente jamais de coordonnées.
-7. Tonne : direct, sobre, empathique, sans pathos. Français. VOUVOIE TOUJOURS l'utilisateur, même s'il tutoie.
-8. Question de relance : si la réponse gagnerait à être précisée (type de handicap, âge de la personne, ville, orientation déjà reçue…), pose exactement UNE question courte et utile dans "followup". Sinon renvoie une chaîne vide.
+SÉPARATION ABSOLUE :
+- Une étape précédente a pu utiliser de la connaissance générale pour trouver les documents. Tu n'y as pas accès.
+- Dans cette étape, toute connaissance générale ou encyclopédique est INTERDITE.
+- La question et le contexte utilisateur servent à comprendre le besoin, jamais de preuve.
+- La réponse, le plan d'action et les contacts proviennent UNIQUEMENT des EXTRAITS AUTORISÉS ci-dessous (centres ressources, CASF et annuaires explicitement autorisés).
+
+RÈGLES DE PREUVE :
+1. Chaque paragraphe, étape et contact contient son ou ses numéros de source ET un extrait exact recopié depuis les EXTRAITS.
+2. L'extrait exact doit soutenir directement le texte rédigé. N'ajoute aucun fait, délai, condition, rôle, droit, contact ou recommandation absent de cet extrait.
+3. Si les extraits ne suffisent pas, mets "unknown": true. N'essaie pas de compléter depuis ta mémoire.
+4. Pour un contact, le nom et le rôle doivent apparaître dans l'extrait exact. L'URL sera imposée par le serveur depuis la source : n'en invente pas.
+5. Pour une étape d'action, l'action doit être directement fondée sur l'extrait ; ne transforme pas une information générale en obligation ou prescription.
+6. Tu ne donnes jamais de conseil médical, juridique ou de décision à la place des institutions. Tu informes et orientes seulement selon les extraits.
+7. Ne propose la MDPH que si les extraits la rendent pertinente pour la demande. Ne propose la Communauté 360 que si les extraits concernent une situation bloquée.
+8. Ton direct, sobre, empathique. Français. VOUVOIE TOUJOURS l'utilisateur.
+9. La relance contient une seule question courte et non factuelle, ou une chaîne vide.
 
 {falc_line}
 
-CONTACTS DE REPÈRE (uniquement pour orienter, jamais comme source d'affirmation) :
-""" + "\n".join(
-        f"- {c['nom']} ({c['scope']}) — {c['role']} — {c['url']}" for c in REPERES
-    ) + f"""
-
-SOURCES (citations possibles) :
+SOURCES AUTORISÉES :
 {_sources_block(docs)}
 
-EXTRAITS :
+EXTRAITS AUTORISÉS :
 {_passages_block(docs)}
 
-Réponds STRICTEMENT en JSON valide, sans texte autour, avec ce schéma :
+Réponds STRICTEMENT en JSON valide, sans texte autour :
 {{
-  "unknown": bool,
-  "paras": ["paragraphe de réponse, avec marqueurs [n]", "..."],
-  "steps": [{{"t": "étape courte", "d": "détail de l'étape"}}],
-  "contacts": [{{"nom": "MDPH du Rhône", "role": "ce que ce contact fait", "scope": "Local|Régional|National", "url": "https://..."}}],
-  "followup": "une seule question de relance courte pour affiner la réponse, ou chaîne vide"
+  "unknown": false,
+  "paras": [
+    {{"text": "reformulation prudente, sans marqueur [n]", "source_ids": [1], "quotes": ["extrait exact copié mot pour mot"]}}
+  ],
+  "steps": [
+    {{"t": "étape courte", "d": "détail strictement soutenu", "source_ids": [1], "quotes": ["extrait exact copié mot pour mot"]}}
+  ],
+  "contacts": [
+    {{"nom": "nom présent dans l'extrait", "role": "rôle présent dans l'extrait", "scope": "Local|Régional|National", "source_id": 1, "quote": "extrait exact copié mot pour mot"}}
+  ],
+  "followup": "une question courte pour préciser, ou chaîne vide"
 }}
-Si tu n'as pas d'étapes ou de contacts utiles, renvoie des listes vides.
-IMPORTANT : les marqueurs de citation sont des NUMÉROS entre crochets ([1], [2]…) qui référencent la source n de la liste SOURCES. Jamais de texte entre crochets."""
+Si aucun élément n'est soutenu par un extrait exact, renvoie paras, steps et contacts vides avec "unknown": true."""
 
 
 CITE_RE = re.compile(r"\[(\d+)\]")
@@ -186,37 +146,167 @@ def _validate_citations(text: str, n_sources: int) -> str:
     return CITE_RE.sub(repl, text)
 
 
-def _clean(data: dict, docs) -> dict:
-    """Valide et borne la sortie du modèle ; supprime toute citation invalide."""
-    n = len(docs)
-    paras = []
-    for p in (data.get("paras") or [])[:5]:
-        t = _validate_citations(str(p).strip(), n)
-        if t:
-            paras.append(t)
-    steps = [
-        {"t": str(s.get("t", ""))[:120], "d": str(s.get("d", ""))[:400]}
-        for s in (data.get("steps") or [])[:5]
-        if s and str(s.get("t", "")).strip()
-    ]
-    contacts = []
-    for c in (data.get("contacts") or [])[:4]:
-        nom = str(c.get("nom", "")).strip()
-        if not nom:
+def _norm_evidence(value: str) -> str:
+    """Normalisation légère pour comparer une citation au passage source."""
+    return " ".join(value.split()).casefold()
+
+
+_SUPPORT_STOPWORDS = {
+    "avec",
+    "dans",
+    "des",
+    "elle",
+    "entre",
+    "est",
+    "les",
+    "leur",
+    "leurs",
+    "pour",
+    "par",
+    "plus",
+    "que",
+    "qui",
+    "sont",
+    "sur",
+    "une",
+    "vous",
+}
+
+
+def _support_tokens(value: str) -> set[str]:
+    """Mots porteurs ramenés à un préfixe commun pour les flexions simples."""
+    value = unicodedata.normalize("NFKD", value.casefold())
+    value = "".join(char for char in value if not unicodedata.combining(char))
+    tokens = set(re.findall(r"[a-z0-9]{3,}", value)) - _SUPPORT_STOPWORDS
+    return {token[:7] if len(token) > 7 else token for token in tokens}
+
+
+def _claim_text(item: dict) -> str:
+    if item.get("text"):
+        return str(item["text"])
+    return " ".join(
+        str(item.get(key, "")) for key in ("t", "d", "nom", "role") if item.get(key)
+    )
+
+
+def _claim_supported(item: dict, quotes: list[str]) -> bool:
+    """Rejette une affirmation sans recouvrement lexical avec ses preuves."""
+    claim = _support_tokens(_claim_text(item))
+    evidence = _support_tokens(" ".join(quotes))
+    if not claim or not evidence:
+        return False
+    overlap = len(claim & evidence)
+    return overlap >= 1 and overlap / len(claim) >= 0.35
+
+
+def _verified_evidence(item: dict, docs) -> list[int]:
+    """Retourne uniquement les sources accompagnées d'un extrait littéral."""
+    raw_ids = item.get("source_ids")
+    if raw_ids is None and item.get("source_id") is not None:
+        raw_ids = [item.get("source_id")]
+    if not isinstance(raw_ids, list):
+        raw_ids = []
+    raw_quotes = item.get("quotes")
+    if raw_quotes is None and item.get("quote") is not None:
+        raw_quotes = [item.get("quote")]
+    if not isinstance(raw_quotes, list):
+        raw_quotes = []
+
+    verified: list[int] = []
+    for raw_id in raw_ids:
+        try:
+            source_id = int(raw_id)
+        except (TypeError, ValueError):
             continue
+        if not 1 <= source_id <= len(docs):
+            continue
+        haystack = _norm_evidence(" ".join(str(p) for p in docs[source_id - 1].passages))
+        if not haystack:
+            continue
+        matched = [
+            str(quote)
+            for quote in raw_quotes
+            if str(quote).strip() and _norm_evidence(str(quote)) in haystack
+        ]
+        if matched and _claim_supported(item, matched) and source_id not in verified:
+            verified.append(source_id)
+    return verified
+
+
+def _refs(source_ids: list[int]) -> str:
+    return "".join(f"[{n}]" for n in source_ids)
+
+
+def _model_text(value: object, limit: int) -> str:
+    """Retire les marqueurs libres du modèle avant d'ajouter les preuves vérifiées."""
+    text = _validate_citations(str(value), n_sources=0)
+    text = re.sub(r"\[[^\]\r\n]{0,100}\]", "", text)
+    text = re.sub(r"https?://[^\s<>()]+", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+([.,])", r"\1", text)
+    return text.strip()[:limit]
+
+
+def _clean(data: dict, docs) -> dict:
+    """Fail-closed : aucun item n'est affiché sans extrait littéral vérifié."""
+    paras: list[str] = []
+    for raw in (data.get("paras") or [])[:5]:
+        if not isinstance(raw, dict):
+            continue
+        source_ids = _verified_evidence(raw, docs)
+        text = _model_text(raw.get("text", ""), 1600)
+        if text and source_ids:
+            paras.append(f"{text} {_refs(source_ids)}")
+
+    steps: list[dict] = []
+    for raw in (data.get("steps") or [])[:5]:
+        if not isinstance(raw, dict):
+            continue
+        source_ids = _verified_evidence(raw, docs)
+        title = _model_text(raw.get("t", ""), 120)
+        detail = _model_text(raw.get("d", ""), 500)
+        if title and detail and source_ids:
+            steps.append({"t": title, "d": f"{detail} {_refs(source_ids)}"})
+
+    contacts: list[dict] = []
+    for raw in (data.get("contacts") or [])[:4]:
+        if not isinstance(raw, dict):
+            continue
+        source_ids = _verified_evidence(raw, docs)
+        nom = _model_text(raw.get("nom", ""), 120)
+        role = _model_text(raw.get("role", ""), 300)
+        if not (nom and role and source_ids):
+            continue
+        source_id = source_ids[0]
         contacts.append({
-            "nom": nom[:120],
-            "role": str(c.get("role", ""))[:300],
-            "scope": c.get("scope") if c.get("scope") in ("Local", "Régional", "National") else "National",
-            "url": str(c.get("url", ""))[:500],
+            "nom": nom,
+            "role": f"{role} [{source_id}]",
+            "scope": raw.get("scope")
+            if raw.get("scope") in ("Local", "Régional", "National")
+            else "National",
+            # URL dérivée du document vérifié : jamais de lien libre du modèle.
+            "url": docs[source_id - 1].url,
         })
+
+    has_supported_content = bool(paras or steps or contacts)
     return {
-        "unknown": bool(data.get("unknown")),
+        "unknown": not has_supported_content,
         "paras": paras,
         "steps": steps,
         "contacts": contacts,
-        "followup": str(data.get("followup", "")).strip()[:300],
+        "followup": _model_text(data.get("followup", ""), 300),
     }
+
+
+def build_messages(question: str, *, system_prompt: str, history=None) -> list[dict]:
+    """Contexte B : extraits dans le système, historique utilisateur uniquement."""
+    messages = [{"role": "system", "content": system_prompt}]
+    for h in (history or [])[-6:]:
+        role = h.get("role")
+        content = str(h.get("content", ""))[:2000]
+        if role == "user" and content:
+            messages.append({"role": "user", "content": content})
+    messages.append({"role": "user", "content": question})
+    return messages
 
 
 async def synthesize(
@@ -229,22 +319,21 @@ async def synthesize(
     situations=None,
     age=None,
     history=None,
+    effort: str = "medium",
 ) -> dict:
-    """Appelle Mistral pour rédiger la réponse sourcée ; valide les citations."""
+    """Appelle Mistral dans un contexte neuf puis applique le contrôle de preuves."""
     api_key = os.environ.get("MISTRAL_API_KEY", "")
-    model = os.environ.get("CHAT_MODEL", DEFAULT_MODEL)
+    from .planner import model_for_effort
+
+    model = model_for_effort(effort)
     if not api_key:
         raise RuntimeError("MISTRAL_API_KEY manquante")
 
-    messages = [
-        {"role": "system", "content": _system_prompt(profile, falc, dept, situations, age, docs)}
-    ]
-    for h in (history or [])[-4:]:
-        role = h.get("role")
-        content = str(h.get("content", ""))[:2000]
-        if role in ("user", "assistant") and content:
-            messages.append({"role": role, "content": content})
-    messages.append({"role": "user", "content": question})
+    messages = build_messages(
+        question,
+        system_prompt=_system_prompt(profile, falc, dept, situations, age, docs),
+        history=history,
+    )
 
     from typing import cast
 
@@ -268,29 +357,20 @@ async def synthesize(
     return _clean(data, docs)
 
 
-def unknown_answer(question: str, docs, profile: str = "famille") -> dict:
-    """Réponse honnête quand la recherche n'a rien trouvé : zéro invention.
-
-    Pas de contacts plaqués : pour un pro, aucun encadré ne l'aide ; pour une
-    famille, on renvoie uniquement le numéro national d'écoute.
-    """
-    paras = [
-        "Je ne sais pas répondre de façon fiable à cette question avec les centres ressources publics que je consulte.",
-        "Je préfère vous le dire plutôt que d'avancer une information incertaine. Une personne pourra vous répondre précisément.",
-    ]
-    if profile == "pro":
-        contacts = []
-        paras.append(
-            "Reformulez avec le dispositif, le sigle ou le nom exact : j'interroge mieux les centres ressources avec des termes précis."
-        )
-    else:
-        contacts = [REPERES[3]]  # Autisme Info Service : ligne d'écoute nationale, pas un guichet
-        paras.append("Pour en parler avec une personne, une ligne d'écoute nationale existe : 0 800 71 40 40.")
+def unknown_answer(
+    question: str,
+    docs,
+    profile: str = "famille",
+    *,
+    followup: str = "",
+) -> dict:
+    """Réponse neutre quand aucun élément n'a franchi le contrôle de preuves."""
     return {
         "unknown": True,
-        "paras": paras,
+        "paras": [],
         "steps": [],
-        "contacts": contacts,
+        "contacts": [],
+        "followup": followup[:300],
         "glossary": {},
     }
 
@@ -304,6 +384,8 @@ def cited_payload(ans: dict, docs) -> list[dict]:
     text = " ".join(ans.get("paras", []))
     for s in ans.get("steps", []):
         text += " " + s.get("t", "") + " " + s.get("d", "")
+    for c in ans.get("contacts", []):
+        text += " " + c.get("nom", "") + " " + c.get("role", "")
     used = {int(m) for m in CITE_RE.findall(text)}
     return [p for p in sources_payload(docs) if p["n"] in used]
 
@@ -313,12 +395,3 @@ def sources_payload(docs) -> list[dict]:
         {"n": i, "doc": d.titre, "centre": d.centre_nom, "url": d.url}
         for i, d in enumerate(docs, 1)
     ]
-
-
-def glossary_for(paras: list[str]) -> dict[str, str]:
-    """Ne renvoie que les sigles effectivement présents dans la réponse."""
-    text = " ".join(paras)
-    return {
-        k: v for k, v in GLOSSARY.items()
-        if re.search(r"\b" + re.escape(k) + r"\b", text)
-    }

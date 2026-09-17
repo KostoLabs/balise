@@ -16,8 +16,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import agent, annuaire, corpus, research
-from .ressources import get_sources
+from . import agent, annuaire, casf, corpus, planner, research
+from .ressources import get_sources, is_authorized_document
 
 log = logging.getLogger("balise")
 
@@ -89,75 +89,108 @@ def _situations_ok(req: ChatRequest) -> list[str]:
     return [s for s in req.situations if s in ok]
 
 
+def _authorized_docs(docs: list) -> list:
+    """Dernière frontière : aucun document hors registre n'atteint Mistral B."""
+    return [
+        doc
+        for doc in docs
+        if is_authorized_document(
+            str(getattr(doc, "centre_id", "")), str(getattr(doc, "url", ""))
+        )
+    ]
+
+
 async def _answer(req: ChatRequest, falc: bool) -> dict:
-    kws = research.keywords(req.question, _context_kw(req) + _situations_ok(req))
-    # 0) annuaire FINESS : coordonnées réelles d'établissements si la question en cherche
+    profile = req.profile if req.profile in ("famille", "pro") else "famille"
+    history = [h.model_dump() for h in req.history]
+
+    # A — compréhension libre, isolée : sa sortie ne pilote QUE la recherche.
+    try:
+        plan = await planner.plan_question(
+            req.question,
+            profile=profile,
+            dept=req.dept,
+            situations=_situations_ok(req),
+            age=req.age,
+            history=history,
+        )
+    except Exception:
+        log.exception("planification Mistral échouée ; requête originale utilisée")
+        plan = planner._clean_plan(
+            {}, fallback_question=req.question, profile=profile
+        )
+
+    clarification = planner.clarification_for(plan)
+    if plan["missing_field"] == "subject":
+        return agent.unknown_answer(
+            req.question, [], profile=profile, followup=clarification
+        )
+
+    context = _context_kw(req) + _situations_ok(req)
+    query_text = " ".join(plan["resource_queries"])
+    kws = research.keywords(query_text or req.question, context)
     docs = []
+
+    # Annuaire explicitement autorisé : coordonnées verbatim si la question en cherche.
     try:
         passages = annuaire.esms_passages(req.question, req.dept.nom if req.dept else None)
     except Exception:
         log.exception("annuaire FINESS échoué")
         passages = []
     if passages:
-        docs.append(type("D", (), {"centre_id": "finess", "centre_nom": "Annuaire FINESS (ANS)",
-                                   "url": "https://finess.esante.gouv.fr/",
-                                   "titre": "Annuaire public des établissements (FINESS)",
-                                   "passages": passages, "score": 50})())
-    # 1) corpus local (passages vérifiés des centres ressources) — prioritaire
+        docs.append(type("D", (), {
+            "centre_id": "finess",
+            "centre_nom": "Annuaire FINESS (ANS)",
+            "url": "https://finess.esante.gouv.fr/",
+            "titre": "Annuaire public des établissements (FINESS)",
+            "passages": passages,
+            "score": 50,
+        })())
+
+    # Corpus vérifié et CASF local : les requêtes viennent de A, le texte de ces sources.
     docs += corpus.corpus_search(kws)
-    # 2) recherche live en complément (fusion, dédoublonnée par URL)
-    live = await research.research_all(req.question, _context_kw(req) + _situations_ok(req))
+    docs += casf.search(plan["casf_queries"], limit=4)
+
+    # Centres ressources live, en parallèle pour chaque reformulation de A.
+    live = await research.research_queries(plan["resource_queries"], context)
     seen = {d.url for d in docs}
     docs += [d for d in live if d.url not in seen]
-    docs = docs[:10]
-    if not docs:
-        return agent.unknown_answer(req.question, docs, profile=req.profile if req.profile in ("famille", "pro") else "famille")
+    docs = _authorized_docs(docs)[:12]
 
+    if not docs:
+        return agent.unknown_answer(
+            req.question, docs, profile=profile, followup=clarification
+        )
+
+    # B — synthèse dans un contexte neuf : aucun fait produit par A n'est transmis.
     try:
         ans = await agent.synthesize(
             req.question,
             docs,
-            profile=req.profile if req.profile in ("famille", "pro") else "famille",
+            profile=profile,
             falc=falc,
             dept=req.dept,
             situations=_situations_ok(req),
             age=req.age,
-            history=[h.model_dump() for h in req.history],
+            history=history,
+            effort=plan["effort"],
         )
     except Exception:
         log.exception("synthèse Mistral échouée")
         raise HTTPException(status_code=502, detail="synthesis_failed")
 
-    if not ans["paras"]:
-        # honnêteté : pas de contenu fabriqué sans source
-        u = agent.unknown_answer(req.question, docs, profile=req.profile if req.profile in ("famille", "pro") else "famille")
-        u["sources"] = agent.cited_payload(u, docs) if u.get("paras") else agent.sources_payload(docs)
-        return u
+    if ans["unknown"] or not (ans["paras"] or ans["steps"] or ans["contacts"]):
+        return agent.unknown_answer(
+            req.question,
+            docs,
+            profile=profile,
+            followup=ans.get("followup") or clarification,
+        )
 
-    # unknown du modèle fiable seulement si les paras ne citent RIEN :
-    # des paragraphes sourcés ([n] valides) prouvent que les extraits répondaient.
-    cited = any(agent.CITE_RE.search(p) for p in ans["paras"])
-    if ans["unknown"] and not cited:
-        # garde : si un doc FINESS (annuaire) était fourni, il contenait une
-        # réponse factuelle — le unknown du modèle est un refus de lecture.
-        has_finess = any(getattr(d, "centre_id", "") == "finess" for d in docs)
-        if not has_finess:
-            u = agent.unknown_answer(req.question, docs, profile=req.profile if req.profile in ("famille", "pro") else "famille")
-            u["sources"] = agent.sources_payload(docs)
-            return u
-        # on force une réponse depuis les passages FINESS, sans invention
-        ans = {
-            "unknown": False,
-            "paras": ["Voici ce que dit l'annuaire public FINESS : " + p for d in docs if getattr(d, "centre_id", "") == "finess" for p in d.passages[:2]],
-            "steps": [],
-            "contacts": [],
-            "followup": "",
-        }
-    if cited:
-        ans["unknown"] = False
-
+    if not ans.get("followup") and clarification:
+        ans["followup"] = clarification
     ans["sources"] = agent.cited_payload(ans, docs)
-    ans["glossary"] = agent.glossary_for(ans["paras"])
+    ans["glossary"] = {}
     return ans
 
 
