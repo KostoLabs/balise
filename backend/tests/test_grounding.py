@@ -56,6 +56,8 @@ def test_planner_is_limited_to_internal_retrieval_queries():
         "profession",
         "intent",
         "effort",
+        "resource_topics",
+        "casf_topics",
         "resource_queries",
         "casf_queries",
         "missing_field",
@@ -64,58 +66,224 @@ def test_planner_is_limited_to_internal_retrieval_queries():
     assert plan["resource_queries"][0].startswith("maladie de Charcot")
 
 
-def test_planner_requires_subject_for_an_unspecified_gene_mutation():
+def test_planner_does_not_override_whole_situation_from_one_keyword():
     plan = _clean_plan(
         {
-            "resource_queries": ["mutation génétique orientation"],
-            "casf_queries": ["maladie génétique"],
-            "missing_field": "department",
+            "resource_queries": ["accompagnement familial après annonce médicale"],
+            "casf_queries": ["évaluation besoins projet de vie"],
+            "missing_field": "situation",
         },
         fallback_question="mon fils a une mutation de gene comment l orienter",
     )
 
-    assert plan["missing_field"] == "subject"
+    assert plan["missing_field"] == "situation"
 
 
-def test_answer_asks_for_unspecified_gene_before_retrieval(monkeypatch):
+def test_planner_keeps_only_controlled_retrieval_facets():
+    plan = _clean_plan(
+        {
+            "resource_topics": [
+                "family_support",
+                "mdph_assessment",
+                "schooling",
+                "invented_diagnosis",
+            ],
+            "casf_topics": [
+                "disability_definition",
+                "needs_assessment",
+                "cdaph_decisions",
+                "invented_article",
+            ],
+        },
+        fallback_question="accompagnement professionnel d'une famille",
+        profile="pro",
+    )
+
+    assert plan["resource_topics"] == [
+        "family_support",
+        "mdph_assessment",
+        "schooling",
+    ]
+    assert plan["casf_topics"] == [
+        "disability_definition",
+        "needs_assessment",
+        "cdaph_decisions",
+    ]
+
+
+def test_planner_prompt_requires_whole_situation_and_distinct_facets():
+    prompt = build_planner_prompt(
+        "Je suis assistante sociale et j'accompagne une famille après une annonce médicale",
+        profile="pro",
+        dept=None,
+        situations=[],
+        age="adolescent",
+        history=[],
+    ).casefold()
+
+    assert "situation dans son ensemble" in prompt
+    assert "rôle du demandeur" in prompt
+    assert "étape du parcours" in prompt
+    assert "conséquences fonctionnelles" in prompt
+    assert "resource_topics" in prompt
+    assert "casf_topics" in prompt
+    assert "prestations pour enfant" in prompt
+    assert "child_benefits" in prompt
+
+
+def test_answer_uses_available_professional_guidance_before_asking_for_details(monkeypatch):
     calls: list[str] = []
 
     async def fake_plan(*args, **kwargs):
-        return _clean_plan(
-            {
-                "resource_queries": ["mutation génétique orientation"],
-                "casf_queries": ["maladie génétique"],
-                "missing_field": "",
-            },
-            fallback_question="mon fils a une mutation de gene comment l orienter",
-        )
+        return {
+            "audience": "pro",
+            "profession": "assistante sociale",
+            "intent": "orientation",
+            "effort": "large",
+            "resource_topics": [
+                "family_support",
+                "mdph_assessment",
+                "schooling",
+                "child_benefits",
+            ],
+            "casf_topics": [
+                "disability_definition",
+                "needs_assessment",
+                "cdaph_decisions",
+            ],
+            "resource_queries": [
+                "évaluation conséquences quotidiennes scolarité handicap",
+            ],
+            "casf_queries": [
+                "équipe pluridisciplinaire évalue besoins projet de vie",
+                "commission droits autonomie prestations orientation scolarisation",
+            ],
+            "missing_field": "subject",
+        }
 
     async def fake_research(*args, **kwargs):
         calls.append("research")
         return []
 
+    async def fake_synthesize(*args, **kwargs):
+        calls.append("synthesize")
+        assert len(args[1]) == 2
+        return {
+            "unknown": False,
+            "paras": ["L’évaluation porte sur les besoins concrets de l’adolescent. [1]"],
+            "steps": [
+                {
+                    "t": "Documenter les besoins",
+                    "d": "Recueillir les conséquences familiales, scolaires et psychologiques. [2]",
+                }
+            ],
+            "contacts": [],
+            "followup": (
+                "Quel diagnostic est associé à la mutation, quelles conséquences sont déjà "
+                "observées et dans quel département vit la famille ?"
+            ),
+        }
+
+    def fake_topic_documents(topics, max_docs=8):
+        calls.append("resource_topics")
+        assert "mdph_assessment" in topics
+        assert max_docs >= 10
+        return [D()]
+
+    def fake_casf_topics(topics, limit=8):
+        calls.append("casf_topics")
+        assert "needs_assessment" in topics
+        return [
+            D(
+                centre_id="casf",
+                titre="CASF — évaluation des besoins",
+                url=(
+                    "https://www.legifrance.gouv.fr/codes/article_lc/"
+                    "LEGIARTI000000000002"
+                ),
+                passages=[
+                    (
+                        "L'équipe pluridisciplinaire évalue les besoins en tenant compte de la "
+                        "situation familiale, sanitaire, scolaire et psychologique."
+                    )
+                ],
+            )
+        ]
+
     monkeypatch.setattr(main.planner, "plan_question", fake_plan)
     monkeypatch.setattr(main.research, "research_queries", fake_research)
+    monkeypatch.setattr(main.agent, "synthesize", fake_synthesize)
     monkeypatch.setattr(main.annuaire, "esms_passages", lambda *args, **kwargs: [])
+    monkeypatch.setattr(main.corpus, "topic_documents", fake_topic_documents)
+    monkeypatch.setattr(main.casf, "search_topics", fake_casf_topics)
     monkeypatch.setattr(main.corpus, "corpus_search", lambda *args, **kwargs: [])
     monkeypatch.setattr(main.casf, "search", lambda *args, **kwargs: [])
 
     answer = asyncio.run(
         main._answer(
             main.ChatRequest(
-                question="mon fils a une mutation de gene comment l orienter",
-                profile="famille",
+                question=(
+                    "je suis assistante social comment puis je accompagné une famille dont "
+                    "l'adolescent vient d'apprendre qu'il a une mutation génétique"
+                ),
+                profile="pro",
             ),
             falc=False,
         )
     )
 
-    assert calls == []
-    assert answer["unknown"] is True
-    assert answer["paras"] == []
-    assert answer["followup"] == (
-        "Quel est le nom précis du gène, de la maladie ou du dispositif concerné ?"
-    )
+    assert calls == ["resource_topics", "casf_topics", "research", "synthesize"]
+    assert answer["unknown"] is False
+    assert answer["paras"]
+    assert answer["steps"]
+    assert "diagnostic" in answer["followup"]
+    assert "conséquences" in answer["followup"]
+    assert "département" in answer["followup"]
+
+
+def test_professional_synthesis_prompt_requires_practical_conditional_guidance():
+    prompt = _system_prompt(
+        "pro",
+        False,
+        dept=None,
+        situations=[],
+        age="adolescent",
+        docs=[D()],
+    ).casefold()
+
+    assert "première orientation utile" in prompt
+    assert "qui fait quoi" in prompt
+    assert "branches conditionnelles" in prompt
+    assert "conséquences fonctionnelles" in prompt
+    assert "deux à quatre questions" in prompt
+    assert "n'assimile jamais un résultat génétique à un handicap" in prompt
+    assert "ne lui propose pas de contacter la mdph" not in prompt
+
+
+def test_synthesis_prompt_requires_validator_compatible_atomic_evidence():
+    prompt = _system_prompt(
+        "pro",
+        False,
+        dept=None,
+        situations=[],
+        age="adolescent",
+        docs=[D()],
+    ).casefold()
+
+    assert "caractère pour caractère" in prompt
+    assert "passage contigu" in prompt
+    assert "aucune ellipse" in prompt
+    assert "une seule affirmation atomique" in prompt
+    assert "exactement une phrase" in prompt
+    assert "un seul passage par chaîne" in prompt
+    assert "le champ d est une copie exacte" in prompt
+    assert "le champ role est une copie exacte" in prompt
+    assert "strictement identiques" in prompt
+    assert "une seule source par élément" in prompt
+    assert "sans minimum ni quota de sources" in prompt
+    assert "aeeh et pch" in prompt and "étapes distinctes" in prompt
+    assert "pertinents pour la demande" in prompt
+    assert "ne change ni les apostrophes" in prompt
 
 
 def test_planner_prompt_allows_understanding_but_forbids_action_plan():
@@ -132,6 +300,64 @@ def test_planner_prompt_allows_understanding_but_forbids_action_plan():
     assert "uniquement" in low and "requêtes" in low
     assert "aucun plan d'action" in low
     assert "ne sera jamais transmis" in low
+
+
+def test_followup_keeps_all_targeted_professional_questions():
+    followup = (
+        "Quel diagnostic ou quelle pathologie est associé à la mutation ? "
+        "Quelles conséquences concrètes sont déjà observées sur l’autonomie, les soins et "
+        "la vie familiale ? Quelles difficultés ou quels aménagements existent actuellement "
+        "dans la scolarité ? Quels accompagnements sont déjà mobilisés et dans quel "
+        "département la famille réside-t-elle ?"
+    )
+    answer = _clean(
+        {
+            "paras": [
+                {
+                    "text": "Le service coordonne les intervenants.",
+                    "source_ids": [1],
+                    "quotes": ["Le service coordonne les intervenants"],
+                }
+            ],
+            "steps": [],
+            "contacts": [],
+            "followup": followup,
+        },
+        [D()],
+    )
+
+    assert answer["followup"] == followup
+
+
+def test_synthesis_reserves_enough_tokens_for_a_professional_plan(monkeypatch):
+    captured = {}
+
+    class FakeChat:
+        async def complete_async(self, **kwargs):
+            captured.update(kwargs)
+            message = type(
+                "Message",
+                (),
+                {
+                    "content": (
+                        '{"unknown":true,"paras":[],"steps":[],"contacts":[],'
+                        '"followup":""}'
+                    )
+                },
+            )()
+            return type("Response", (), {"choices": [type("Choice", (), {"message": message})()]})()
+
+    class FakeMistral:
+        def __init__(self, **kwargs):
+            self.chat = FakeChat()
+
+    monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
+    monkeypatch.setattr(main.agent, "Mistral", FakeMistral)
+
+    asyncio.run(main.agent.synthesize("question", [D()], profile="pro", effort="large"))
+
+    assert captured["max_tokens"] >= 6000
+    assert captured["temperature"] == 0.0
 
 
 @pytest.mark.parametrize(
@@ -179,7 +405,9 @@ def test_clean_rejects_every_item_without_exact_evidence():
                 "t": "Construire le projet",
                 "d": "Coordonner les intervenants avec la personne.",
                 "source_ids": [1],
-                "quotes": ["coordonne les intervenants"],
+                "quotes": [
+                    "Le service coordonne les intervenants et élabore avec la personne un projet individualisé."
+                ],
             },
             {
                 "t": "Action inventée",
@@ -190,12 +418,12 @@ def test_clean_rejects_every_item_without_exact_evidence():
         ],
         "contacts": [
             {
-                "nom": "Centre autorisé",
+                "nom": "Service",
                 "role": "Coordonne les intervenants.",
                 "scope": "National",
                 "url": "https://evil.example",
                 "source_id": 1,
-                "quote": "coordonne les intervenants",
+                "quote": "Le service coordonne les intervenants",
             },
             {
                 "nom": "Contact inventé",
@@ -252,6 +480,236 @@ def test_clean_keeps_only_sources_that_individually_support_the_claim():
     ]
 
 
+def test_clean_rejects_a_supported_sentence_followed_by_an_invention():
+    answer = _clean(
+        {
+            "paras": [
+                {
+                    "text": (
+                        "Le service coordonne les intervenants avec la personne. "
+                        "La Lune est constituée de fromage."
+                    ),
+                    "source_ids": [1],
+                    "quotes": ["Le service coordonne les intervenants"],
+                }
+            ]
+        },
+        [D()],
+    )
+
+    assert answer["paras"] == []
+    assert answer["unknown"] is True
+
+
+def test_clean_rejects_a_contact_role_absent_from_the_quote():
+    docs = [
+        D(
+            centre_id="corpus-rare-centres",
+            centre_nom="Filières maladies rares",
+            url="https://www.filieresmaladiesrares.fr/annuaires-des-centres/",
+            passages=[
+                "Annuaire des centres de référence et de compétence maladies rares."
+            ],
+        )
+    ]
+    answer = _clean(
+        {
+            "contacts": [
+                {
+                    "nom": "Centres de référence maladies rares",
+                    "role": "Coordonnent les soins et établissent les protocoles thérapeutiques.",
+                    "scope": "National",
+                    "source_id": 1,
+                    "quote": "Annuaire des centres de référence et de compétence maladies rares.",
+                }
+            ]
+        },
+        docs,
+    )
+
+    assert answer["contacts"] == []
+    assert answer["unknown"] is True
+
+
+def test_clean_accepts_only_typographic_apostrophe_normalization():
+    docs = [
+        D(passages=["Le médecin apporte une aide et l’accompagnement nécessaire."])
+    ]
+    answer = _clean(
+        {
+            "paras": [
+                {
+                    "text": "Le médecin apporte l'accompagnement nécessaire.",
+                    "source_ids": [1],
+                    "quotes": [
+                        "Le médecin apporte une aide et l'accompagnement nécessaire."
+                    ],
+                }
+            ]
+        },
+        docs,
+    )
+
+    assert answer["paras"] == [
+        "Le médecin apporte l'accompagnement nécessaire. [1]"
+    ]
+
+
+def test_clean_preserves_eight_supported_steps_and_full_evidence():
+    passages = [
+        (
+            "Le service coordonne les intervenants "
+            + "et documente les besoins avec la personne " * 18
+            + f"dans son projet individualisé numéro {index}."
+        )
+        for index in range(1, 9)
+    ]
+    docs = [D(passages=passages)]
+    answer = _clean(
+        {
+            "steps": [
+                {
+                    "t": f"Coordonner les intervenants — étape {index}",
+                    "d": passages[index - 1],
+                    "source_ids": [1],
+                    "quotes": [passages[index - 1]],
+                }
+                for index in range(1, 9)
+            ]
+        },
+        docs,
+    )
+
+    assert len(answer["steps"]) == 8
+    assert answer["steps"][0]["d"] == f"{passages[0]} [1]"
+
+
+def test_clean_rejects_a_period_replacing_a_comma_in_evidence():
+    docs = [
+        D(
+            passages=[
+                "La maison départementale des personnes handicapées assure à la personne handicapée et à sa famille l'aide nécessaire à la formulation de son projet de vie, l'aide nécessaire à la mise en oeuvre des décisions."
+            ]
+        )
+    ]
+    quote = (
+        "La maison départementale des personnes handicapées assure à la personne handicapée "
+        "et à sa famille l'aide nécessaire à la formulation de son projet de vie."
+    )
+    answer = _clean(
+        {
+            "steps": [
+                {
+                    "t": "Faire accompagner la formulation du projet de vie par la MDPH",
+                    "d": quote,
+                    "source_ids": [1],
+                    "quotes": [quote],
+                }
+            ]
+        },
+        docs,
+    )
+
+    assert answer["steps"] == []
+    assert answer["unknown"] is True
+
+
+def test_clean_accepts_literal_quotes_with_model_source_suffixes():
+    answer = _clean(
+        {
+            "paras": [
+                {
+                    "text": "Le service coordonne les intervenants avec la personne.",
+                    "source_ids": [1],
+                    "quotes": ["Le service coordonne les intervenants (source 1)"],
+                }
+            ]
+        },
+        [D()],
+    )
+
+    assert answer["paras"] == [
+        "Le service coordonne les intervenants avec la personne. [1]"
+    ]
+
+
+def test_clean_renders_step_detail_from_literal_evidence_not_paraphrase():
+    passage = (
+        "La commission des droits et de l'autonomie des personnes handicapées "
+        "prend les décisions relatives aux prestations."
+    )
+    answer = _clean(
+        {
+            "steps": [
+                {
+                    "t": "Identifier le décideur des prestations",
+                    "d": "La CDAPH décide seule de tous les droits demandés par la famille.",
+                    "source_ids": [1],
+                    "quotes": [passage],
+                }
+            ]
+        },
+        [D(passages=[passage])],
+    )
+
+    assert answer["steps"][0]["d"] == f"{passage} [1]"
+    assert "tous les droits" not in answer["steps"][0]["d"]
+
+
+def test_clean_splits_a_composite_step_into_one_step_per_source():
+    docs = [
+        D(
+            passages=[
+                "L'équipe pluridisciplinaire évalue les besoins de compensation sur la base du projet de vie."
+            ]
+        ),
+        D(
+            centre_id="corpus-mdph-daily-life",
+            centre_nom="Maladies Rares Info Services",
+            url="https://www.maladiesraresinfo.org/mdph",
+            passages=[
+                "La rubrique vie quotidienne décrit les difficultés et les attentes de la personne."
+            ],
+        ),
+        D(
+            centre_id="corpus-pps",
+            centre_nom="Mon parcours handicap",
+            url="https://www.monparcourshandicap.gouv.fr/pps",
+            passages=[
+                "Le projet personnalisé de scolarisation définit les aménagements répondant aux besoins de l'élève."
+            ],
+        ),
+    ]
+    answer = _clean(
+        {
+            "steps": [
+                {
+                    "t": "Documenter les besoins et la scolarité",
+                    "d": (
+                        "Faites évaluer les besoins de compensation à partir du projet de vie, "
+                        "décrivez les difficultés quotidiennes et mobilisez les aménagements "
+                        "scolaires répondant aux besoins de l'élève."
+                    ),
+                    "source_ids": [1, 2, 3],
+                    "quotes": [
+                        "L'équipe pluridisciplinaire évalue les besoins de compensation sur la base du projet de vie.",
+                        "La rubrique vie quotidienne décrit les difficultés et les attentes de la personne.",
+                        "Le projet personnalisé de scolarisation définit les aménagements répondant aux besoins de l'élève.",
+                    ],
+                }
+            ]
+        },
+        docs,
+    )
+
+    assert len(answer["steps"]) == 3
+    assert [step["d"].rsplit(" ", 1)[-1] for step in answer["steps"]] == [
+        "[1]",
+        "[2]",
+        "[3]",
+    ]
+
+
 def test_clean_strips_model_supplied_markers_before_adding_verified_citations():
     answer = _clean(
         {
@@ -302,6 +760,54 @@ def test_clean_fails_closed_when_nothing_is_supported():
     assert answer["steps"] == []
     assert answer["contacts"] == []
     assert answer["followup"] == "Quel est le nom du gène concerné ?"
+
+
+def test_resource_topics_return_diverse_professional_evidence():
+    docs = corpus.corpus_search(
+        ["mutation", "génétique", "adolescent", "résultat"], max_docs=2
+    ) + corpus.topic_documents(
+        [
+            "family_support",
+            "expert_centres",
+            "mdph_assessment",
+            "daily_life_impact",
+            "schooling",
+            "child_benefits",
+        ],
+        max_docs=12,
+    )
+
+    urls = {doc.url for doc in docs}
+    assert "https://genetique-medicale.fr/parcours-de-soins-en-genetique/" in urls
+    assert "https://genetique-medicale.fr/professionnels-de-la-genetique-medicale/" in urls
+    assert "https://www.filieresmaladiesrares.fr/annuaires-des-centres/" in urls
+    assert (
+        "https://parcourssantevie.maladiesraresinfo.org/pages/"
+        "comment-faire-une-demande-aupres-de-la-MDPH.html"
+    ) in urls
+    assert (
+        "https://www.monparcourshandicap.gouv.fr/scolarite/"
+        "quest-ce-que-le-pps-projet-personnalise-de-scolarisation"
+    ) in urls
+    assert any("AEEH" in doc.titre for doc in docs)
+    assert any("PCH" in doc.titre for doc in docs)
+    assert all(doc.centre_id.startswith("corpus-") for doc in docs)
+    assert all(is_authorized_document(doc.centre_id, doc.url) for doc in docs)
+
+
+def test_generic_medical_topics_do_not_inject_genetic_documents():
+    generic = corpus.topic_documents(
+        ["medical_context", "family_support", "care_coordination"], max_docs=10
+    )
+    specific = corpus.corpus_search(
+        ["mutation", "génétique", "adolescent", "résultat"], max_docs=2
+    )
+
+    assert all("genetic" not in doc.centre_id for doc in generic)
+    assert {doc.centre_id for doc in specific} == {
+        "corpus-genetic_pathway",
+        "corpus-genetic_professionals",
+    }
 
 
 def test_verified_corpus_routes_charcot_to_the_has_care_pathway():
@@ -402,6 +908,121 @@ def test_answer_uses_plan_only_for_retrieval_not_synthesis(monkeypatch):
     assert "plan" not in seen["synthesis_kwargs"]
     assert "SLA" not in repr(seen["synthesis_kwargs"])
     assert answer["unknown"] is False
+
+
+def test_original_question_terms_survive_planner_reformulation(monkeypatch):
+    seen = {}
+
+    async def fake_plan(*args, **kwargs):
+        return {
+            "audience": "pro",
+            "profession": "assistante sociale",
+            "intent": "orientation",
+            "effort": "large",
+            "resource_topics": [],
+            "casf_topics": [],
+            "resource_queries": ["accompagnement familial global"],
+            "casf_queries": [],
+            "missing_field": "subject",
+        }
+
+    async def fake_research(*args, **kwargs):
+        return []
+
+    def fake_corpus_search(keywords):
+        seen["keywords"] = keywords
+        return [D()]
+
+    async def fake_synthesize(*args, **kwargs):
+        return {
+            "unknown": False,
+            "paras": ["Réponse fondée sur la source. [1]"],
+            "steps": [],
+            "contacts": [],
+            "followup": "",
+        }
+
+    monkeypatch.setattr(main.planner, "plan_question", fake_plan)
+    monkeypatch.setattr(main.research, "research_queries", fake_research)
+    monkeypatch.setattr(main.corpus, "corpus_search", fake_corpus_search)
+    monkeypatch.setattr(main.corpus, "topic_documents", lambda *args, **kwargs: [])
+    monkeypatch.setattr(main.casf, "search_topics", lambda *args, **kwargs: [])
+    monkeypatch.setattr(main.casf, "search", lambda *args, **kwargs: [])
+    monkeypatch.setattr(main.annuaire, "esms_passages", lambda *args, **kwargs: [])
+    monkeypatch.setattr(main.agent, "synthesize", fake_synthesize)
+
+    request = main.ChatRequest(
+        question=(
+            "Je suis assistante sociale et l'adolescent vient d'apprendre "
+            "qu'il a une mutation génétique."
+        ),
+        profile="pro",
+    )
+    asyncio.run(main._answer(request, falc=False))
+
+    assert "mutation" in seen["keywords"]
+    assert "génétique" in seen["keywords"]
+    assert "global" in seen["keywords"]
+
+
+def test_specific_corpus_evidence_is_not_crowded_out_by_facets(monkeypatch):
+    seen = {}
+
+    async def fake_plan(*args, **kwargs):
+        return {
+            "audience": "pro",
+            "profession": "assistante sociale",
+            "intent": "orientation",
+            "effort": "large",
+            "resource_topics": [
+                "medical_context",
+                "family_support",
+                "expert_centres",
+                "mdph_assessment",
+                "schooling",
+                "child_benefits",
+                "establishment_search",
+                "caregiver_support",
+            ],
+            "casf_topics": [
+                "disability_definition",
+                "needs_assessment",
+                "pch",
+                "mdph_missions",
+                "right_to_compensation",
+                "cdaph_decisions",
+            ],
+            "resource_queries": ["maladie de Charcot SLA orientation"],
+            "casf_queries": [],
+            "missing_field": "department",
+        }
+
+    async def fake_research(*args, **kwargs):
+        return []
+
+    async def fake_synthesize(question, docs, **kwargs):
+        seen["docs"] = docs
+        return {
+            "unknown": False,
+            "paras": ["Réponse fondée sur le document [1]"],
+            "steps": [],
+            "contacts": [],
+            "followup": "",
+        }
+
+    monkeypatch.setattr(main.planner, "plan_question", fake_plan)
+    monkeypatch.setattr(main.research, "research_queries", fake_research)
+    monkeypatch.setattr(main.annuaire, "esms_passages", lambda *args, **kwargs: [])
+    monkeypatch.setattr(main.casf, "search", lambda *args, **kwargs: [])
+    monkeypatch.setattr(main.agent, "synthesize", fake_synthesize)
+
+    request = main.ChatRequest(
+        question="Comment orienter un adolescent atteint de la maladie de Charcot ?",
+        profile="pro",
+    )
+    asyncio.run(main._answer(request, falc=False))
+
+    assert any(doc.centre_id == "corpus-sla" for doc in seen["docs"])
 
 
 def test_research_queries_fans_out_planner_queries_in_parallel(monkeypatch):

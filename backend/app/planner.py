@@ -18,6 +18,27 @@ from mistralai.client import Mistral
 _ALLOWED_INTENTS = {"definition", "orientation", "droits", "coordonnees", "comparaison", "autre"}
 _ALLOWED_EFFORTS = {"small", "medium", "large"}
 _ALLOWED_MISSING = {"", "subject", "department", "age", "situation"}
+_ALLOWED_RESOURCE_TOPICS = {
+    "medical_context",
+    "family_support",
+    "expert_centres",
+    "mdph_assessment",
+    "daily_life_impact",
+    "schooling",
+    "child_benefits",
+    "care_coordination",
+    "establishment_search",
+    "caregiver_support",
+}
+_ALLOWED_CASF_TOPICS = {
+    "disability_definition",
+    "right_to_compensation",
+    "mdph_missions",
+    "needs_assessment",
+    "cdaph_decisions",
+    "pch",
+    "esms_orientation",
+}
 _QUERY_CLEAN = re.compile(r"[^\wÀ-ÿ .,'()/-]+")
 
 
@@ -46,6 +67,18 @@ def _queries(value: object, fallback: list[str] | None = None) -> list[str]:
     return out or list(fallback or [])
 
 
+def _topics(value: object, allowed: set[str]) -> list[str]:
+    """Conserve uniquement les facettes de recherche prévues par Balise."""
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for raw in value:
+        topic = str(raw).strip()
+        if topic in allowed and topic not in out:
+            out.append(topic)
+    return out
+
+
 def _clean_plan(data: object, *, fallback_question: str, profile: str = "famille") -> dict:
     """Ne conserve que les champs autorisés à piloter la recherche."""
     if not isinstance(data, dict):
@@ -62,13 +95,6 @@ def _clean_plan(data: object, *, fallback_question: str, profile: str = "famille
     missing = str(data.get("missing_field", ""))
     if missing not in _ALLOWED_MISSING:
         missing = ""
-    normalized_question = fallback_question.casefold()
-    generic_mutation = re.search(
-        r"\bmutation\b.*\bg[eè]ne\b(?:\s+(?:comment|quel(?:le)?|pour|chez|et|orienter)\b|\s*$)",
-        normalized_question,
-    )
-    if generic_mutation:
-        missing = "subject"
     profession = " ".join(str(data.get("profession", "")).split())[:80]
     fallback = " ".join(fallback_question.split())[:120]
     return {
@@ -76,6 +102,10 @@ def _clean_plan(data: object, *, fallback_question: str, profile: str = "famille
         "profession": profession,
         "intent": intent,
         "effort": effort,
+        "resource_topics": _topics(
+            data.get("resource_topics"), _ALLOWED_RESOURCE_TOPICS
+        ),
+        "casf_topics": _topics(data.get("casf_topics"), _ALLOWED_CASF_TOPICS),
         "resource_queries": _queries(data.get("resource_queries"), [fallback] if fallback else []),
         "casf_queries": _queries(data.get("casf_queries")),
         "missing_field": missing,
@@ -109,9 +139,22 @@ def build_planner_prompt(
         if h.get("role") == "user" and h.get("content")
     ]
     context = "\n".join(f"- {x}" for x in previous_users) or "- aucun"
+    resource_topics = "|".join(sorted(_ALLOWED_RESOURCE_TOPICS))
+    casf_topics = "|".join(sorted(_ALLOWED_CASF_TOPICS))
 
     return f"""Tu planifies la recherche interne de Balise, sans répondre à l'utilisateur.
 
+Comprends d'abord la situation dans son ensemble. Ne réduis jamais la demande à
+un mot médical ou administratif isolé. Analyse conjointement :
+- le rôle du demandeur et le niveau métier attendu ;
+- la personne concernée, son âge et l'étape du parcours ;
+- l'objectif concret de la demande ;
+- les conséquences fonctionnelles déjà décrites ou encore inconnues ;
+- les dimensions potentiellement pertinentes : soins, vie quotidienne,
+  scolarité, droits, compensation, coordination et soutien familial.
+Pour l'orientation sociale d'un mineur ou d'un adolescent, considère toujours,
+sans présumer d'une éligibilité, les prestations pour enfant (child_benefits),
+la scolarité, l'évaluation MDPH et la PCH parmi les facettes de recherche.
 Tu peux utiliser ta connaissance générale ou encyclopédique (comme Wikipédia) UNIQUEMENT pour :
 - reconnaître et catégoriser un terme, une maladie ou un gène ;
 - développer un sigle et trouver des synonymes utiles ;
@@ -133,10 +176,17 @@ Réponds STRICTEMENT en JSON :
   "profession": "métier explicitement indiqué ou chaîne vide",
   "intent": "definition|orientation|droits|coordonnees|comparaison|autre",
   "effort": "small|medium|large",
-  "resource_queries": ["1 à 3 requêtes courtes avec synonymes utiles"],
+  "resource_topics": ["0 à 8 facettes parmi : {resource_topics}"],
+  "casf_topics": ["0 à 8 facettes parmi : {casf_topics}"],
+  "resource_queries": ["1 à 3 requêtes distinctes couvrant les facettes utiles"],
   "casf_queries": ["0 à 3 thèmes juridiques à rechercher, sans inventer de numéro d'article"],
   "missing_field": "|subject|department|age|situation"
 }}
+
+Choisis plusieurs facettes lorsque le besoin est multidimensionnel. Une donnée
+manquante n'interdit pas une première orientation : elle sert à préparer une
+recherche générale et la future question d'affinage. Ne déduis jamais qu'un
+diagnostic, un handicap, une limitation ou un droit existe s'il n'est pas dit.
 
 Effort : small pour une définition ou une coordonnée directe ; medium pour une
 orientation courante ; large pour une situation professionnelle, rare,

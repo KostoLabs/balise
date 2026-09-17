@@ -1,6 +1,7 @@
 """Tests du noyau Balise : extraction, scoring, citations — sans réseau."""
 
 
+from app import annuaire
 from app.agent import _validate_citations, sources_payload
 from app.research import html_blocks, keywords, parse_search_results, score_block
 
@@ -48,6 +49,24 @@ def test_keywords_and_scoring():
     b_hi = "Le dossier MDPH se dépose avec un certificat médical et le projet de vie."
     b_lo = "Le service public informe sur les impôts et la fiscalité locale."
     assert score_block(b_hi, kws) > score_block(b_lo, kws)
+
+
+def test_generic_family_support_question_does_not_trigger_finess_results():
+    question = (
+        "je suis assistante social comment puis je accompagné une famille dont "
+        "l'adolescent vient d'apprendre qu'il a une mutation génétique"
+    )
+
+    assert annuaire.esms_passages(question) == []
+
+
+def test_family_word_is_not_treated_as_the_fam_acronym():
+    assert annuaire.search_esms("famille") == []
+
+
+def test_finess_does_not_return_arbitrary_mdph_without_location():
+    assert annuaire.search_esms("Comment faire une demande à la MDPH ?") == []
+    assert annuaire.esms_passages("Comment faire une demande à la MDPH ?") == []
 
 
 def test_validate_citations_drops_invalid_markers():

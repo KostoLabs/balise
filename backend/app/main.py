@@ -100,6 +100,22 @@ def _authorized_docs(docs: list) -> list:
     ]
 
 
+def _merge_docs(*groups: list, limit: int = 16) -> list:
+    """Fusionne les voies de recherche sans laisser les doublons prendre la place."""
+    docs: list = []
+    seen: set[str] = set()
+    for group in groups:
+        for doc in group:
+            url = str(getattr(doc, "url", ""))
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            docs.append(doc)
+            if len(docs) == limit:
+                return docs
+    return docs
+
+
 async def _answer(req: ChatRequest, falc: bool) -> dict:
     profile = req.profile if req.profile in ("famille", "pro") else "famille"
     history = [h.model_dump() for h in req.history]
@@ -121,19 +137,18 @@ async def _answer(req: ChatRequest, falc: bool) -> dict:
         )
 
     clarification = planner.clarification_for(plan)
-    if plan["missing_field"] == "subject":
-        return agent.unknown_answer(
-            req.question, [], profile=profile, followup=clarification
-        )
 
     context = _context_kw(req) + _situations_ok(req)
     query_text = " ".join(plan["resource_queries"])
-    kws = research.keywords(query_text or req.question, context)
+    lexical_text = " ".join(part for part in (req.question, query_text) if part)
+    kws = research.keywords(lexical_text, context)
     docs = []
 
     # Annuaire explicitement autorisé : coordonnées verbatim si la question en cherche.
     try:
-        passages = annuaire.esms_passages(req.question, req.dept.nom if req.dept else None)
+        passages = annuaire.esms_passages(
+            req.question, dept_code=req.dept.code if req.dept else None
+        )
     except Exception:
         log.exception("annuaire FINESS échoué")
         passages = []
@@ -147,15 +162,29 @@ async def _answer(req: ChatRequest, falc: bool) -> dict:
             "score": 50,
         })())
 
-    # Corpus vérifié et CASF local : les requêtes viennent de A, le texte de ces sources.
-    docs += corpus.corpus_search(kws)
-    docs += casf.search(plan["casf_queries"], limit=4)
+    # Corpus et CASF par facettes : sélection contrôlée depuis la compréhension
+    # globale de A. Seuls les documents sources, jamais le plan, atteignent B.
+    topic_docs = corpus.topic_documents(plan.get("resource_topics", []), max_docs=10)
+    casf_topic_docs = casf.search_topics(plan.get("casf_topics", []), limit=6)
+
+    # Préserve les trois résultats de l'original avant une place complémentaire :
+    # les reformulations de A ne peuvent pas évincer le troisième résultat.
+    original_docs = corpus.corpus_search(research.keywords(req.question, []))
+    corpus_docs = _merge_docs(original_docs, corpus.corpus_search(kws), limit=4)
+    casf_docs = casf.search(plan["casf_queries"], limit=4)
 
     # Centres ressources live, en parallèle pour chaque reformulation de A.
     live = await research.research_queries(plan["resource_queries"], context)
-    seen = {d.url for d in docs}
-    docs += [d for d in live if d.url not in seen]
-    docs = _authorized_docs(docs)[:12]
+    docs = _merge_docs(
+        docs,
+        corpus_docs,
+        topic_docs,
+        casf_topic_docs,
+        casf_docs,
+        live,
+        limit=20,
+    )
+    docs = _authorized_docs(docs)
 
     if not docs:
         return agent.unknown_answer(

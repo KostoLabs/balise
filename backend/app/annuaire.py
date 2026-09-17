@@ -67,18 +67,24 @@ def _load_organismes() -> dict:
     return _org_cache
 
 
+def _commune_name(value: str) -> str:
+    """La ligne d'acheminement FINESS peut comporter un suffixe CEDEX."""
+    return re.sub(r"\s+cedex(?:\s+[0-9]+)?$", "", " ".join(_norm(value).split()))
+
+
 def _detect_commune(query: str) -> str | None:
-    """Détecte une ville citée dans la question (match sur l'index des communes)."""
-    q = _norm(query)
-    communes = {}
-    for e in _load():
-        c = _norm(str(e.get("commune")))
-        if len(c) >= 4:
-            communes.setdefault(c, True)
-    for c in communes:
-        if c in q:
-            return c
-    return None
+    """Détecte une seule ville, par termes entiers de l'index des communes."""
+    q = " ".join(_norm(query).split())
+    communes = {_commune_name(e.get("commune") or "") for e in _load()}
+    matches = {
+        c for c in communes if len(c) >= 4 and re.search(rf"\b{re.escape(c)}\b", q)
+    }
+    # « Saint André lez Lille » ne doit pas sélectionner « Lille ».
+    matches = {
+        c for c in matches
+        if not any(c != other and re.search(rf"\b{re.escape(c)}\b", other) for other in matches)
+    }
+    return next(iter(matches)) if len(matches) == 1 else None
 
 
 def search_organisme(query: str, limit: int = 3) -> list[dict]:
@@ -102,7 +108,7 @@ def search_organisme(query: str, limit: int = 3) -> list[dict]:
     # 2) recherche générique par mots significatifs
     words = [w for w in q.split() if len(w) >= 4]
     GENERIC = {"handicap", "handicapes", "handicapés", "enfants", "enfant", "adultes",
-               "adulte", "association", "pour", "donne", "coordonnees", "coordonnées",
+               "adulte", "association", "famille", "familles", "pour", "donne", "coordonnees", "coordonnées",
                "integration", "jeunes", "personnes", "etablissements", "medicalise",
                "medicale", "medico", "social", "hebergement"}
     words = [w for w in words if w not in GENERIC]
@@ -118,19 +124,35 @@ def search_organisme(query: str, limit: int = 3) -> list[dict]:
     return [o for _, o in out[:limit]]
 
 
-def search_esms(query: str, commune: str | None = None, limit: int = 4) -> list[dict]:
-    """Cherche des établissements médico-sociaux par type/nom et commune."""
+def search_esms(
+    query: str, commune: str | None = None, limit: int = 4, *, dept_code: str | None = None,
+) -> list[dict]:
+    """Cherche par type/nom, commune et/ou code départemental explicite.
+
+    Le périmètre départemental utilise le CP public FINESS, pas le n° FINESS.
+    Seuls les codes métropolitains 01–95 hors Corse sont pris en charge ;
+    aucun repli national pour un code invalide ou non pris en charge.
+    """
+    if dept_code is not None and not re.fullmatch(
+        r"(?:0[1-9]|1[0-9]|2[1-9]|[3-8][0-9]|9[0-5])", dept_code,
+    ):
+        return []
     entries = _load()
     if not entries:
         return []
     q = _norm(query)
-    # ville citée dans la question ? (prioritaire sur le paramètre)
-    ville = _detect_commune(query) or (commune if commune and _norm(commune) in q else None)
+    # Une commune fournie reste contraignante même si la question ne la répète pas.
+    ville = _commune_name(commune) if commune else _detect_commune(query)
     # détecte le(s) type(s) demandé(s)
     types = []
     for kw, libkws in TYPE_KW:
-        if kw in q:
+        normalized_kw = _norm(kw)
+        if normalized_kw and re.search(rf"\b{re.escape(normalized_kw)}\b", q):
             types.extend(_norm(t) for t in libkws)
+    # Sans localisation, les premiers résultats nationaux seraient arbitraires,
+    # y compris quand plusieurs mots génériques correspondent au nom.
+    if not ville and not dept_code:
+        return []
     # mots génériques de la question à chercher dans le nom
     stop = {"dans", "les", "une", "que", "qui", "pour", "avec", "est", "il", "y", "a",
             "contact", "contacter", "etablissement", "etablissements", "existe", "pres",
@@ -146,20 +168,27 @@ def search_esms(query: str, commune: str | None = None, limit: int = 4) -> list[
 
     out = []
     for e in entries:
+        if dept_code:
+            cp = str(e.get("cp") or "")
+            if not re.fullmatch(r"[0-9]{5}", cp) or not cp.startswith(dept_code):
+                continue
         nom_n = _norm(e["nom"])
         type_n = _norm(str(e.get("type") or ""))
-        commune_n = _norm(str(e.get("commune"))) + " " + _norm(str(e.get("cp")))
+        commune_n = _commune_name(e.get("commune") or "")
         score = 0
         if types:
             if not any(t in type_n for t in types):
                 continue
             score += 3
         if wanted:
-            score += sum(2 for w in wanted if w in nom_n)
-            if not types and score == 0:
+            name_hits = sum(1 for w in wanted if w in nom_n)
+            score += 2 * name_hits
+            # Sans type explicite, un mot courant isolé (par ex. « famille »
+            # ou « accompagnement ») ne suffit pas à identifier un ESMS.
+            if not types and name_hits < 2:
                 continue
         if ville:
-            if ville not in commune_n:
+            if ville != commune_n:
                 continue
             score += 5
         if score <= 0:
@@ -170,7 +199,9 @@ def search_esms(query: str, commune: str | None = None, limit: int = 4) -> list[
     return [dict(e) for _, e in out[:limit]]
 
 
-def esms_passages(query: str, commune: str | None = None) -> list[str]:
+def esms_passages(
+    query: str, commune: str | None = None, *, dept_code: str | None = None,
+) -> list[str]:
     """Passages formatés pour l'agent : coordonnées réelles à citer.
 
     D'abord les établissements par type+ville ; si la question cite un
@@ -212,7 +243,7 @@ def esms_passages(query: str, commune: str | None = None) -> list[str]:
         docs.append(line)
 
     # 2) établissements par type + ville
-    for h in search_esms(query, commune):
+    for h in search_esms(query, commune, dept_code=dept_code):
         tel = h.get("tel") or ""
         if tel.startswith("0") and len(tel) == 10:
             tel = " ".join(tel[i:i + 2] for i in range(0, 10, 2))
