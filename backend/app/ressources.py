@@ -5,7 +5,31 @@ Chaque centre expose un site public avec recherche interne ou annuaire.
 sans `search_url` sont utilisés via leurs pages stables (accueil/annuaire).
 """
 
+from urllib.parse import urlparse
+
 SITES = [
+    {
+        "id": "casf",
+        "nom": "Légifrance — Code de l'action sociale et des familles",
+        "type": "Public",
+        "url": "https://www.legifrance.gouv.fr/codes/texte_lc/LEGITEXT000006074069",
+        "desc": "Texte officiel consolidé du CASF, fourni par la DILA.",
+        "search_url": None,
+        "result_link": None,
+        "allowed_domains": ["legifrance.gouv.fr"],
+        "scope": "national",
+    },
+    {
+        "id": "finess",
+        "nom": "Annuaire FINESS",
+        "type": "Public",
+        "url": "https://finess.esante.gouv.fr/",
+        "desc": "Annuaire public des établissements et organismes sanitaires et médico-sociaux.",
+        "search_url": None,
+        "result_link": None,
+        "allowed_domains": ["finess.esante.gouv.fr", "data.gouv.fr"],
+        "scope": "national",
+    },
     {
         "id": "service-public",
         "nom": "Service-Public.fr",
@@ -205,6 +229,39 @@ SITES = [
         "scope": "national",
     },
 ]
+
+
+_SOURCE_BY_ID = {source["id"]: source for source in SITES}
+
+
+def _domain_allowed(url: str, domains: list[str]) -> bool:
+    host = urlparse(url).hostname or ""
+    host = host.casefold()
+    return url.startswith("https://") and any(
+        host == domain or host.endswith("." + domain) for domain in domains
+    )
+
+
+def is_authorized_document(source_id: str, url: str) -> bool:
+    """Politique unique pour les documents live, CASF, FINESS et corpus."""
+    source = _SOURCE_BY_ID.get(source_id)
+    if source is not None:
+        domains = source.get("allowed_domains") or [
+            (urlparse(source["url"]).hostname or "").removeprefix("www.")
+        ]
+        return _domain_allowed(url, domains)
+    if source_id.startswith("corpus-"):
+        # Le corpus garde ses identifiants de routage mais son URL doit appartenir
+        # à l'un des organismes explicitement inscrits au registre.
+        return any(
+            _domain_allowed(
+                url,
+                source.get("allowed_domains")
+                or [(urlparse(source["url"]).hostname or "").removeprefix("www.")],
+            )
+            for source in SITES
+        )
+    return False
 
 
 def get_sources() -> list[dict]:

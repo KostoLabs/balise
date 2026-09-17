@@ -1,8 +1,8 @@
 """Corpus local : passages réels extraits des centres ressources publics.
 
-Chaque passage est cité tel quel depuis la page du centre (extraction du
-16/09/2026). Le corpus garantit les réponses aux questions fréquentes ;
-la recherche live complète pour tout le reste. Sources = mêmes centres
+Chaque passage est cité tel quel depuis la page du centre (extractions
+vérifiées au 17/09/2026). Le corpus garantit les réponses aux questions
+fréquentes ; la recherche live complète pour tout le reste. Sources = mêmes
 ressources, jamais de rédaction maison.
 """
 
@@ -130,6 +130,22 @@ CORPUS = {
             "Le trouble du spectre de l'autisme fait partie des troubles du neurodéveloppement (TND), comme le TDAH ou les troubles dys.",
         ],
     },
+    "sla": {
+        "titre": "Sclérose latérale amyotrophique — protocole national de diagnostic et de soins",
+        "centre": "HAS — Haute Autorité de Santé",
+        "url": "https://www.has-sante.fr/jcms/c_2573383/fr/sclerose-laterale-amyotrophique",
+        "kws": [
+            "maladie de Charcot",
+            "sclérose latérale amyotrophique",
+            "sla",
+            "maladie du motoneurone",
+            "pnds",
+            "centre de référence",
+        ],
+        "passages": [
+            "Ce protocole national de diagnostic et de soins (PNDS) explicite aux professionnels concernés la prise en charge diagnostique et thérapeutique optimale et le parcours de soins d’un patient atteint de Sclérose latérale amyotrophique. Il a été élaboré par le centre de référence SLA à l’aide d’une méthodologie proposée par la HAS. Il n’a pas fait l’objet d’une validation par la HAS qui n’a pas participé à son élaboration.",
+        ],
+    },
     "conge_aidant": {
         "titre": "Congé de proche aidant",
         "centre": "Service-Public.fr",
@@ -160,19 +176,6 @@ CORPUS = {
         "passages": [
             "Chaque département dispose d'une Maison départementale des personnes handicapées (MDPH) : guichet unique pour déposer le dossier, faire évaluer la situation et obtenir les décisions de la CDAPH. L'annuaire du service public liste les coordonnées de la MDPH de chaque département.",
             "Quand une situation est bloquée (sans solution, rupture d'accompagnement), la Communauté 360 du département peut être saisie au 0 800 360 360 pour construire une réponse avec la personne, ses aidants et les acteurs mobilisables.",
-        ],
-    },
-    "casf_esms": {
-        "titre": "Code de l'action sociale et des familles — articles D312-162 à D312-171 (SAVS et SAMSAH)",
-        "centre": "Légifrance (CASF)",
-        "url": "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000006797585",
-        "kws": ["casf", "code de l'action sociale", "d312", "l312", "article", "légifrance", "juridique", "texte de loi", "cadre légal"],
-        "passages": [
-            "Articles L312-1 7°, D312-162 à D312-171 du CASF : les SAVS et les SAMSAH sont des services médico-sociaux qui contribuent à un accompagnement personnalisé dans tous les actes essentiels de la vie quotidienne.",
-            "Les services d'accompagnement à la vie sociale (SAVS) ont pour vocation de contribuer à la réalisation du projet de vie de personnes adultes handicapées par un accompagnement adapté favorisant le maintien ou la restauration de leurs liens familiaux, scolaires, universitaires ou professionnels et facilitant leur accès à l'ensemble des services offerts par la collectivité (art. D312-162 du CASF).",
-            "Les services d'accompagnement médico-social pour adultes handicapés (SAMSAH) ont pour vocation, dans le cadre d'un accompagnement médico-social adapté, de compléter le dispositif du SAVS par des prestations de soins. Ces services s'adressent à des personnes plus lourdement handicapées qu'en SAVS (art. D312-166 du CASF).",
-            "Tout adulte handicapé dont le handicap est reconnu par la commission des droits et de l'autonomie des personnes handicapées (CDAPH) peut bénéficier d'un suivi par un SAVS ou SAMSAH (art. D312-170 du CASF).",
-            "Les SAVS font l'objet d'une autorisation de création par le président du conseil départemental. Les SAMSAH font l'objet d'une autorisation conjointe entre le président du conseil départemental et le directeur général de l'agence régionale de santé.",
         ],
     },
 }

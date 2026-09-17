@@ -34,7 +34,11 @@ def main() -> None:
         print(f"!! {src} introuvable", file=sys.stderr)
         sys.exit(1)
     libelles = json.loads((DATA / "categ_libelles.json").read_text()) if (DATA / "categ_libelles.json").exists() else {}
-    cats = set(MS_CATS) | {c for c, l in libelles.items() if any(k in l.upper() for k in MS_LIB_KW)}
+    cats = set(MS_CATS) | {
+        category
+        for category, label in libelles.items()
+        if any(keyword in label.upper() for keyword in MS_LIB_KW)
+    }
 
     d = json.loads(src.read_text())
     eges = []
