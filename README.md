@@ -75,6 +75,9 @@ domaines. Toute autre origine est rejetée avant la synthèse.
 | Autisme Info Service | Association | `autismeinfoservice.fr` |
 | Nephou | Association | `nephou.org` |
 | HAS | Public | `has-sante.fr` |
+| Agence de la biomédecine — Génétique médicale | Public | `genetique-medicale.fr` |
+| Filières de santé maladies rares | Public | `filieresmaladiesrares.fr` |
+| Maladies Rares Info Services | Association | `maladiesraresinfo.org` |
 | Agefiph | Association | `agefiph.fr`, `espace-emploi.agefiph.fr` |
 | Ministère chargé du handicap | Public | `handicap.gouv.fr` |
 | Mon parcours handicap | Public | `monparcourshandicap.gouv.fr` |
@@ -215,6 +218,25 @@ cd backend
 .venv/bin/python -m pytest -q
 node --check ../frontend/app.js
 ```
+
+### Validation réelle Mistral (hors CI)
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/python scripts/e2e_grounding.py \
+  --env-file ../docker/.env --output-dir /tmp/balise-grounding --repeats 2
+```
+
+Ce test consomme des appels API réels. Il ne tourne pas dans la CI. Il couvre
+le scénario professionnel global, une famille, un autre sujet nommé et les
+modes de lecture simplifiée famille/professionnel. Chaque exécution conserve
+le plan privé, les documents retenus, les réponses brutes du modèle et la sortie
+validée dans un fichier JSON distinct. `report.json` contient les contrôles
+agrégés ; une réponse manquante ou un contrôle échoué donne un code de sortie
+non nul. Utiliser `--scenario <nom>` pour rejouer un cas isolé.
+
+Les contrôles de longueur ne certifient pas une conformité FALC : une relecture
+humaine reste nécessaire pour l'accessibilité et l'applicabilité des informations.
 
 ## Sources
 

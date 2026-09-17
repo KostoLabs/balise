@@ -93,7 +93,8 @@ def _best_passage(text: str, terms: set[str], max_chars: int = 1800) -> str:
     text = " ".join(text.split())
     if len(text) <= max_chars:
         return text
-    sentences = re.split(r"(?<=[.!?;:])\s+", text)
+    # L./R./D. introduisent une référence, pas une nouvelle phrase.
+    sentences = re.split(r"(?<=[.!?;:])(?<!\b[LRD]\.)\s+", text)
     scored = []
     for i, sentence in enumerate(sentences):
         low = _norm(sentence)
@@ -164,6 +165,77 @@ def search(
                 titre=f"CASF — article {num}{suffix}",
                 passages=[passage],
                 score=score,
+            )
+        )
+    return docs
+
+
+CASF_TOPIC_ARTICLES = {
+    "disability_definition": [
+        ("L114", "limitation activité restriction participation altération durable")
+    ],
+    "right_to_compensation": [
+        ("L114-1-1", "droit compensation besoins projet vie famille aidants")
+    ],
+    "mdph_missions": [
+        ("L146-3", "accueil information accompagnement conseil projet vie")
+    ],
+    "needs_assessment": [
+        ("L146-8", "évalue besoins compensation incapacité projet vie parents mineur"),
+        (
+            "R146-28",
+            "situation matérielle familiale sanitaire scolaire professionnelle psychologique",
+        ),
+    ],
+    "cdaph_decisions": [
+        ("L241-6", "prestations orientation scolarisation enfant adolescent")
+    ],
+    "pch": [("L245-1", "prestation compensation enfant conditions besoins")],
+    "esms_orientation": [
+        ("L241-6", "orientation établissement service médico-social")
+    ],
+}
+
+
+def search_topics(
+    topics: list[str],
+    *,
+    path: str | Path = INDEX_PATH,
+    limit: int = 8,
+) -> list[Doc]:
+    """Résout des facettes contrôlées vers les articles CASF exacts en vigueur."""
+    try:
+        index = load_index(path)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return []
+
+    articles = {_num_norm(str(article["num"])): article for article in index.articles}
+    requested: list[tuple[str, str]] = []
+    for topic in topics:
+        for ref, focus in CASF_TOPIC_ARTICLES.get(topic, []):
+            normalized_ref = _num_norm(ref)
+            if all(existing_ref != normalized_ref for existing_ref, _ in requested):
+                requested.append((normalized_ref, focus))
+
+    docs: list[Doc] = []
+    for normalized_ref, focus in requested[: max(0, limit)]:
+        article = articles.get(normalized_ref)
+        if article is None:
+            continue
+        legi_id = str(article["id"])
+        num = str(article["num"])
+        terms = {term for term in _norm(focus).split() if term not in STOP}
+        passage = _best_passage(str(article["texte"]), terms)
+        since = str(article.get("date_debut", "")).strip()
+        suffix = f" — en vigueur depuis {since}" if since else ""
+        docs.append(
+            Doc(
+                centre_id="casf",
+                centre_nom="Légifrance — Code de l'action sociale et des familles",
+                url=f"https://www.legifrance.gouv.fr/codes/article_lc/{legi_id}",
+                titre=f"CASF — article {num}{suffix}",
+                passages=[passage],
+                score=1000,
             )
         )
     return docs

@@ -83,3 +83,44 @@ def test_invalid_or_incomplete_index_is_disabled(tmp_path):
     path = tmp_path / "bad.json"
     path.write_text(json.dumps({"meta": {"publisher": "DILA"}, "articles": []}))
     assert casf.search(["PCH"], path=path) == []
+
+
+def test_controlled_topics_resolve_exact_current_casf_articles():
+    docs = casf.search_topics(
+        [
+            "disability_definition",
+            "right_to_compensation",
+            "mdph_missions",
+            "needs_assessment",
+            "cdaph_decisions",
+            "pch",
+        ],
+        limit=10,
+    )
+
+    titles = "\n".join(doc.titre for doc in docs)
+    assert "article L114 —" in titles
+    assert "article L114-1-1 —" in titles
+    assert "article L146-3 —" in titles
+    assert "article L146-8 —" in titles
+    assert "article R146-28 —" in titles
+    assert "article L241-6 —" in titles
+    assert "article L245-1 —" in titles
+    assert len(docs) == 7
+
+
+@pytest.mark.parametrize("prefix", ["L", "R", "D"])
+def test_best_passage_never_splits_an_article_reference_or_its_condition(prefix):
+    sentence = f"L'équipe évalue les besoins selon l'article {prefix}. 312-1 si la condition est remplie."
+    text = "Introduction. " + sentence + " Une autre phrase."
+    passage = casf._best_passage(text, {"evalue", "besoins"}, max_chars=60)
+    assert passage == sentence
+    assert passage in text
+
+
+def test_live_l146_8_passage_does_not_end_at_article_abbreviation():
+    doc = next(doc for doc in casf.search_topics(["needs_assessment"])
+               if "article L146-8" in doc.titre)
+    assert not doc.passages[0].endswith("article L.")
+    original = next(a["texte"] for a in casf.load_index().articles if a["num"] == "L146-8")
+    assert doc.passages[0] in " ".join(original.split())
